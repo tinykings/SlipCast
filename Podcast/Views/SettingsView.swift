@@ -88,6 +88,17 @@ private struct MutedTermRow: View {
     let term: MutedTerm
 
     var body: some View {
-        Label(term.text, systemImage: "speaker.slash.fill")
+        Label(Self.masked(term.text), systemImage: "speaker.slash.fill")
+            .accessibilityLabel("Muted word starting with \(term.text.prefix(1).uppercased())")
+    }
+
+    /// Hides each word behind its first letter: "bad word" → "b** w***".
+    static func masked(_ text: String) -> String {
+        text.split(separator: " ", omittingEmptySubsequences: false)
+            .map { word in
+                guard let first = word.first else { return "" }
+                return String(first) + String(repeating: "*", count: word.count - 1)
+            }
+            .joined(separator: " ")
     }
 }
