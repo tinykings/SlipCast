@@ -1,0 +1,106 @@
+import Foundation
+import SwiftData
+
+enum DownloadState: String, Codable {
+    /// Not on device.
+    case notDownloaded
+    /// Handed to the background session but no bytes yet (e.g. waiting for Wi-Fi).
+    case queued
+    case downloading
+    case downloaded
+    case failed
+}
+
+enum ProcessingState: String, Codable {
+    case none
+    /// Downloaded, waiting to be transcribed.
+    case pending
+    case processing
+    /// Transcript saved; muting can be applied.
+    case ready
+    case failed
+}
+
+@Model
+final class Episode {
+    /// Stable hash of feed URL + guid. Also used for local file names.
+    @Attribute(.unique) var episodeID: String
+    var guid: String
+    var title: String
+    var summary: String
+    var pubDate: Date?
+    var duration: Double?
+    var audioURL: String
+    var imageURL: String?
+    var show: Show?
+
+    var fileName: String?
+    var downloadedAt: Date?
+    var downloadStateRaw: String = DownloadState.notDownloaded.rawValue
+    var processingStateRaw: String = ProcessingState.none.rawValue
+    var processingError: String?
+
+    var playbackPosition: Double = 0
+    var isPlayed: Bool = false
+
+    init(
+        episodeID: String,
+        guid: String,
+        title: String,
+        summary: String,
+        pubDate: Date?,
+        duration: Double?,
+        audioURL: String,
+        imageURL: String?
+    ) {
+        self.episodeID = episodeID
+        self.guid = guid
+        self.title = title
+        self.summary = summary
+        self.pubDate = pubDate
+        self.duration = duration
+        self.audioURL = audioURL
+        self.imageURL = imageURL
+    }
+
+    var downloadState: DownloadState {
+        get { DownloadState(rawValue: downloadStateRaw) ?? .notDownloaded }
+        set { downloadStateRaw = newValue.rawValue }
+    }
+
+    var processingState: ProcessingState {
+        get { ProcessingState(rawValue: processingStateRaw) ?? .none }
+        set { processingStateRaw = newValue.rawValue }
+    }
+
+    var localFileURL: URL? {
+        fileName.map { Storage.episodesDirectory.appending(path: $0) }
+    }
+
+    /// Downloaded and fully scanned for muted words.
+    var isReady: Bool {
+        downloadState == .downloaded && processingState == .ready
+    }
+
+    /// Downloading, or downloaded and still being scanned.
+    var isInProgress: Bool {
+        downloadState == .queued || downloadState == .downloading
+            || (downloadState == .downloaded && (processingState == .pending || processingState == .processing))
+    }
+
+    var artworkURL: String? { imageURL ?? show?.artworkURL }
+}
+
+extension ModelContext {
+    func episode(withID id: String) -> Episode? {
+        var descriptor = FetchDescriptor<Episode>(predicate: #Predicate { $0.episodeID == id })
+        descriptor.fetchLimit = 1
+        return try? fetch(descriptor).first
+    }
+
+    func show(withFeedURL feedURL: String) -> Show? {
+        var descriptor = FetchDescriptor<Show>(predicate: #Predicate { $0.feedURL == feedURL })
+        descriptor.fetchLimit = 1
+        return try? fetch(descriptor).first
+    }
+}
