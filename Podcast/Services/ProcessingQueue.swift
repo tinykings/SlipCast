@@ -250,7 +250,10 @@ final class ProcessingQueue {
                     liveWords.append(contentsOf: update.words)
                     liveScannedThrough = 0
                     if update.totalDuration > 0 {
-                        progress[id] = 0.25 * min(1, update.scannedThrough / update.totalDuration)
+                        let fraction = min(1, update.scannedThrough / update.totalDuration)
+                        progress[id] = 0.25 * fraction
+                        phaseLabel[id] = String(format: "Transcribing %.0f%% · %@ of %@", fraction * 100,
+                                                Format.clock(update.scannedThrough), Format.clock(update.totalDuration))
                     }
                 case .transcriptReady(let words):
                     liveWords = words
