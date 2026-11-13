@@ -10,6 +10,9 @@ final class Show {
     var summary: String
     var artworkURL: String?
     var language: String?
+    var filteringEnabled: Bool = false
+    /// The feed's show-level `itunes:explicit` tag. Filtering starts on for these.
+    var isExplicit: Bool = false
     var autoDownload: Bool
     var subscribedAt: Date
     var lastRefreshed: Date?

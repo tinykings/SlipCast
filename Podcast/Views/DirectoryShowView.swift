@@ -21,7 +21,10 @@ struct DirectoryShowView: View {
         List {
             Section {
                 HStack(alignment: .top, spacing: 14) {
-                    ArtworkView(urlString: podcast.artworkURL, size: 110, cornerRadius: 12)
+                    VStack(spacing: 6) {
+                        ArtworkView(urlString: podcast.artworkURL, size: 110, cornerRadius: 12)
+                        if feed?.isExplicit == true { ExplicitBadge() }
+                    }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(podcast.title).font(.title3.bold())
                         Text(podcast.author).font(.subheadline).foregroundStyle(.secondary)

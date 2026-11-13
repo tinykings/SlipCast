@@ -29,7 +29,7 @@ enum BackgroundWork {
     }
 
     static func scheduleProcessing() {
-        guard AppEnvironment.shared.processing.hasPendingWork else { return }
+        guard !AppEnvironment.shared.processing.isPaused, AppEnvironment.shared.processing.hasPendingWork else { return }
         let request = BGProcessingTaskRequest(identifier: processID)
         request.requiresNetworkConnectivity = false
         request.requiresExternalPower = false

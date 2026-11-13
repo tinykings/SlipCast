@@ -1,0 +1,765 @@
+{
+  "status": "experimental_phone_test_screen_added",
+  "created_utc": "2026-11-13T00:20:40.752614+00:00",
+  "episode": {
+    "title": "\"RE-RELEASE: Bill Hader\"",
+    "url": "https://dts.podtrac.com/redirect.mp3/stitcher.simplecastaudio.com/559b7461-a7b0-4341-b142-0ae492cb0a65/episodes/217deef7-8140-4441-8099-14b12c35b2e4/audio/128/default.mp3?aid=rss_feed&awCollectionId=559b7461-a7b0-4341-b142-0ae492cb0a65&awEpisodeId=217deef7-8140-4441-8099-14b12c35b2e4&feed=hNaFxXpO"
+  },
+  "source_audio_sha256": "4a7364a83f213f9f7c14f5be8c9fe44a98296e1d0349260e2f15e8b1fd746f2c",
+  "source_note": "Public download obtained November 12, 2026. Ad insertion shifts timestamps relative to the phone copy.",
+  "findings": {
+    "direct_keyword_detector_recovers_overlap": false,
+    "separation_plus_keyword_detector_recovers_overlap": true,
+    "overlap_target_onset_seconds": 1533.48,
+    "additional_flags_near_so_funny_seconds": [
+      1541.68,
+      1541.74
+    ],
+    "human_review_of_additional_flags": "Phone listening correction: the second flag is funny. User wants to keep that mute. A separate slurred fuck occurs almost at the end of its preview.",
+    "repeated_word_timestamps_preserved_with_short_scans": true,
+    "ready_for_iphone_integration": false,
+    "additional_event_word": "fuck",
+    "additional_event_exact_timing_verified": false,
+    "fuck_rule_recovers_both_user_confirmed_events": false,
+    "fuck_rule_false_positive_in_clean_synthetic_control": null,
+    "synthetic_control_listening_review": "Pending user review; script contains no profanity, but actual pronunciation has not been independently verified.",
+    "second_flag_word": "funny",
+    "second_flag_kept_by_user_preference": true
+  },
+  "limitations": [
+    "Small exploratory sample set; no general accuracy guarantee.",
+    "The user confirms fuck after so funny. Earlier fucking-only runs do not establish correct word identity or exact alignment for that event.",
+    "Token onsets are approximate. Reliable mute start and end boundaries still need validation.",
+    "Short-window prototype supports English single words, not the full app phrase and substring semantics.",
+    "Phone model size, battery use, memory, and scan speed have not been measured.",
+    "The native iPhone feature analyzes selected short sections for comparison; it does not automatically change normal episode playback.",
+    "Scripted-clean sample pronunciation and any flagged spots remain open to listening review."
+  ],
+  "synthetic_controls": {
+    "generator": "macOS say",
+    "negative": {
+      "voice": "Samantha",
+      "rate": 165,
+      "text": "We were just talking about a funny story. I would have been on the floor laughing. The funky music was coming from the hall. We were walking past the kitchen. I remember Dana and I were wondering what happened. The forking road took us toward the forest."
+    },
+    "repeated_positive": {
+      "voice": "Samantha",
+      "rate": 150,
+      "text": "That was fucking strange. [[slnc 1500]] I heard it again. [[slnc 1500]] That was fucking loud."
+    }
+  },
+  "cases": [
+    {
+      "experimental": true,
+      "audio": "episode.mp3",
+      "probe_sha256": "91cc61cbc0800719b888b487288a1e5a1683743b320c6145a897975148178fb9",
+      "start": 1517.0,
+      "duration": 30.0,
+      "keywords": [
+        "fucking"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": null,
+      "separator_revision": null,
+      "hits": [],
+      "expected_window": [
+        1532.0,
+        1535.0
+      ],
+      "expect_absent": false,
+      "expectation_passed": false,
+      "target_found": false,
+      "extra_hits": [],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "overlap"
+    },
+    {
+      "experimental": true,
+      "audio": "episode.mp3",
+      "probe_sha256": "91cc61cbc0800719b888b487288a1e5a1683743b320c6145a897975148178fb9",
+      "start": 1517.0,
+      "duration": 30.0,
+      "keywords": [
+        "fucking"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": "speechbrain/sepformer-wsj02mix",
+      "separator_revision": "3a2826343a10e2d2e8a75f79aeab5ff3a2473531",
+      "hits": [
+        {
+          "keyword": "fucking",
+          "token_onsets": [
+            1533.4799999654292,
+            1533.5199999570846,
+            1533.5599999785422,
+            1533.639999961853
+          ],
+          "supporting_scans": 2,
+          "scan_starts": [
+            1532.44,
+            1532.76
+          ],
+          "window_start": 1527.0,
+          "window": 2,
+          "voice": 0
+        },
+        {
+          "keyword": "fucking",
+          "token_onsets": [
+            1541.7399999928475,
+            1541.7799999845029,
+            1541.819999946356,
+            1541.859999997616
+          ],
+          "supporting_scans": 2,
+          "scan_starts": [
+            1541.08,
+            1540.76
+          ],
+          "window_start": 1527.0,
+          "window": 2,
+          "voice": 0
+        },
+        {
+          "keyword": "fucking",
+          "token_onsets": [
+            1541.6799999618531,
+            1541.7199999904633,
+            1541.7999999666215,
+            1541.8799999570847
+          ],
+          "supporting_scans": 3,
+          "scan_starts": [
+            1541.28,
+            1540.64,
+            1540.96
+          ],
+          "window_start": 1532.0,
+          "window": 3,
+          "voice": 0
+        }
+      ],
+      "expected_window": [
+        1532.0,
+        1535.0
+      ],
+      "expect_absent": false,
+      "expectation_passed": null,
+      "target_found": true,
+      "extra_hits": [
+        {
+          "keyword": "fucking",
+          "token_onsets": [
+            1541.7399999928475,
+            1541.7799999845029,
+            1541.819999946356,
+            1541.859999997616
+          ],
+          "supporting_scans": 2,
+          "scan_starts": [
+            1541.08,
+            1540.76
+          ],
+          "window_start": 1527.0,
+          "window": 2,
+          "voice": 0
+        },
+        {
+          "keyword": "fucking",
+          "token_onsets": [
+            1541.6799999618531,
+            1541.7199999904633,
+            1541.7999999666215,
+            1541.8799999570847
+          ],
+          "supporting_scans": 3,
+          "scan_starts": [
+            1541.28,
+            1540.64,
+            1540.96
+          ],
+          "window_start": 1532.0,
+          "window": 3,
+          "voice": 0
+        }
+      ],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "overlap-separated",
+      "interpretation": "The second flagged word is funny, accepted as a conservative mute. The subsequent slurred fuck is a separate missed event; model accuracy must not count the funny flag as detecting it.",
+      "historical_expectation_passed": false,
+      "expectation_valid": false,
+      "latest_phone_review": "The second flagged word is funny, accepted as a conservative mute. The subsequent slurred fuck is a separate missed event; model accuracy must not count the funny flag as detecting it."
+    },
+    {
+      "experimental": true,
+      "audio": "episode.mp3",
+      "probe_sha256": "91cc61cbc0800719b888b487288a1e5a1683743b320c6145a897975148178fb9",
+      "start": 3399.0,
+      "duration": 12.0,
+      "keywords": [
+        "fucking"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": null,
+      "separator_revision": null,
+      "hits": [
+        {
+          "keyword": "fucking",
+          "token_onsets": [
+            3404.7599999785425,
+            3404.8,
+            3404.8399999690055,
+            3404.919999952316
+          ],
+          "supporting_scans": 3,
+          "scan_starts": [
+            3403.48,
+            3403.8,
+            3404.12
+          ],
+          "window_start": 3399.0,
+          "window": 0,
+          "voice": "mixture"
+        }
+      ],
+      "expected_window": [
+        3404.0,
+        3406.0
+      ],
+      "expect_absent": false,
+      "expectation_passed": true,
+      "target_found": true,
+      "extra_hits": [],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "clear"
+    },
+    {
+      "experimental": true,
+      "audio": "episode.mp3",
+      "probe_sha256": "91cc61cbc0800719b888b487288a1e5a1683743b320c6145a897975148178fb9",
+      "start": 1940.0,
+      "duration": 40.0,
+      "keywords": [
+        "fucking"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": "speechbrain/sepformer-wsj02mix",
+      "separator_revision": "3a2826343a10e2d2e8a75f79aeab5ff3a2473531",
+      "hits": [],
+      "expected_window": null,
+      "expect_absent": true,
+      "expectation_passed": true,
+      "target_found": null,
+      "extra_hits": [],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "negative-separated"
+    },
+    {
+      "experimental": true,
+      "audio": "episode.mp3",
+      "probe_sha256": "91cc61cbc0800719b888b487288a1e5a1683743b320c6145a897975148178fb9",
+      "start": 1538.0,
+      "duration": 25.0,
+      "keywords": [
+        "fucking"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": "speechbrain/sepformer-wsj02mix",
+      "separator_revision": "3a2826343a10e2d2e8a75f79aeab5ff3a2473531",
+      "hits": [
+        {
+          "keyword": "fucking",
+          "token_onsets": [
+            1541.6799999523164,
+            1541.719999973774,
+            1541.7999999570848,
+            1541.8799999332427
+          ],
+          "supporting_scans": 3,
+          "scan_starts": [
+            1541.2,
+            1540.88,
+            1540.56
+          ],
+          "window_start": 1538.0,
+          "window": 0,
+          "voice": 0
+        }
+      ],
+      "expected_window": null,
+      "expect_absent": true,
+      "expectation_passed": null,
+      "target_found": null,
+      "extra_hits": [],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "near-miss-separated",
+      "interpretation": "The second flagged word is funny, accepted as a conservative mute. The subsequent slurred fuck is a separate missed event; model accuracy must not count the funny flag as detecting it.",
+      "historical_expectation_passed": false,
+      "expectation_valid": false,
+      "latest_phone_review": "The second flagged word is funny, accepted as a conservative mute. The subsequent slurred fuck is a separate missed event; model accuracy must not count the funny flag as detecting it."
+    },
+    {
+      "experimental": true,
+      "audio": "negative-near-words.aiff",
+      "probe_sha256": "91cc61cbc0800719b888b487288a1e5a1683743b320c6145a897975148178fb9",
+      "start": 0,
+      "duration": 13.354331065759638,
+      "keywords": [
+        "fucking"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": "speechbrain/sepformer-wsj02mix",
+      "separator_revision": "3a2826343a10e2d2e8a75f79aeab5ff3a2473531",
+      "hits": [],
+      "expected_window": null,
+      "expect_absent": true,
+      "expectation_passed": true,
+      "target_found": null,
+      "extra_hits": [],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "negative-synthetic-separated"
+    },
+    {
+      "experimental": true,
+      "audio": "positive-repeated.aiff",
+      "probe_sha256": "91cc61cbc0800719b888b487288a1e5a1683743b320c6145a897975148178fb9",
+      "start": 0,
+      "duration": 7.58907029478458,
+      "keywords": [
+        "fucking"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": null,
+      "separator_revision": null,
+      "hits": [
+        {
+          "keyword": "fucking",
+          "token_onsets": [
+            0.639999989271164,
+            0.6799999958276749,
+            0.7199999725818634,
+            0.819999966621399
+          ],
+          "supporting_scans": 2,
+          "scan_starts": [
+            0.0,
+            0.32
+          ],
+          "window_start": 0,
+          "window": 0,
+          "voice": "mixture"
+        },
+        {
+          "keyword": "fucking",
+          "token_onsets": [
+            6.799999961853027,
+            6.839999990463257,
+            6.919999973773956,
+            6.9999999642372135
+          ],
+          "supporting_scans": 3,
+          "scan_starts": [
+            6.4,
+            5.76,
+            6.08
+          ],
+          "window_start": 0,
+          "window": 0,
+          "voice": "mixture"
+        }
+      ],
+      "expected_window": null,
+      "expect_absent": false,
+      "expectation_passed": true,
+      "target_found": null,
+      "extra_hits": [],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "positive-repeated",
+      "expected_onset_windows": [
+        [
+          0.3,
+          1.2
+        ],
+        [
+          6.3,
+          7.3
+        ]
+      ]
+    },
+    {
+      "experimental": true,
+      "audio": "episode.mp3",
+      "probe_sha256": "e7208ee4294823cdcca382a6f5728ebc42f408aee64e313d99963bc99ccdeef3",
+      "start": 1517.0,
+      "duration": 30.0,
+      "keywords": [
+        "fuck"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": "speechbrain/sepformer-wsj02mix",
+      "separator_revision": "3a2826343a10e2d2e8a75f79aeab5ff3a2473531",
+      "hits": [
+        {
+          "keyword": "fuck",
+          "token_onsets": [
+            1533.479999961853,
+            1533.519999923706,
+            1533.5599999523163
+          ],
+          "supporting_scans": 3,
+          "scan_starts": [
+            1532.12,
+            1532.44,
+            1532.76
+          ],
+          "window_start": 1527.0,
+          "window": 2,
+          "voice": 0
+        },
+        {
+          "keyword": "fuck",
+          "token_onsets": [
+            1541.7399999928475,
+            1541.7799999845029,
+            1541.819999946356
+          ],
+          "supporting_scans": 2,
+          "scan_starts": [
+            1541.08,
+            1540.76
+          ],
+          "window_start": 1527.0,
+          "window": 2,
+          "voice": 0
+        },
+        {
+          "keyword": "fuck",
+          "token_onsets": [
+            1533.5999999821188,
+            1533.6400000035765,
+            1533.6799999654295
+          ],
+          "supporting_scans": 2,
+          "scan_starts": [
+            1532.64,
+            1532.96
+          ],
+          "window_start": 1532.0,
+          "window": 3,
+          "voice": 0
+        },
+        {
+          "keyword": "fuck",
+          "token_onsets": [
+            1541.6799999618531,
+            1541.7199999904633,
+            1541.7999999666215
+          ],
+          "supporting_scans": 3,
+          "scan_starts": [
+            1541.28,
+            1540.64,
+            1540.96
+          ],
+          "window_start": 1532.0,
+          "window": 3,
+          "voice": 0
+        }
+      ],
+      "expected_windows": [
+        [
+          1532.0,
+          1535.0
+        ],
+        [
+          1541.0,
+          1543.0
+        ]
+      ],
+      "expected_windows_found": [
+        true,
+        true
+      ],
+      "expect_absent": false,
+      "expectation_passed": null,
+      "target_found": true,
+      "extra_hits": [],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "both-confirmed",
+      "user_confirmed_words": [
+        "fucking",
+        "fuck"
+      ],
+      "latest_phone_review": "The second flagged word is funny, accepted as a conservative mute. The subsequent slurred fuck is a separate missed event; model accuracy must not count the funny flag as detecting it.",
+      "historical_expectation_passed": true,
+      "expectation_valid": false
+    },
+    {
+      "experimental": true,
+      "audio": "episode.mp3",
+      "probe_sha256": "e7208ee4294823cdcca382a6f5728ebc42f408aee64e313d99963bc99ccdeef3",
+      "start": 1538.0,
+      "duration": 25.0,
+      "keywords": [
+        "fuck"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": "speechbrain/sepformer-wsj02mix",
+      "separator_revision": "3a2826343a10e2d2e8a75f79aeab5ff3a2473531",
+      "hits": [
+        {
+          "keyword": "fuck",
+          "token_onsets": [
+            1541.6799999523164,
+            1541.719999973774,
+            1541.7999999570848
+          ],
+          "supporting_scans": 3,
+          "scan_starts": [
+            1541.2,
+            1540.88,
+            1540.56
+          ],
+          "window_start": 1538.0,
+          "window": 0,
+          "voice": 0
+        }
+      ],
+      "expected_windows": [
+        [
+          1541.0,
+          1543.0
+        ]
+      ],
+      "expected_windows_found": [
+        true
+      ],
+      "expect_absent": false,
+      "expectation_passed": null,
+      "target_found": true,
+      "extra_hits": [],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "second-confirmed",
+      "user_confirmed_words": [
+        "fuck"
+      ],
+      "latest_phone_review": "The second flagged word is funny, accepted as a conservative mute. The subsequent slurred fuck is a separate missed event; model accuracy must not count the funny flag as detecting it.",
+      "historical_expectation_passed": true,
+      "expectation_valid": false
+    },
+    {
+      "experimental": true,
+      "audio": "negative-near-words.aiff",
+      "probe_sha256": "e7208ee4294823cdcca382a6f5728ebc42f408aee64e313d99963bc99ccdeef3",
+      "start": 0,
+      "duration": 13.354331065759638,
+      "keywords": [
+        "fuck"
+      ],
+      "model": "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+      "model_archive_sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+      "quantized": false,
+      "threshold": 0.25,
+      "score": 1,
+      "min_support": 2,
+      "scan_seconds": 1.28,
+      "scan_hop_seconds": 0.32,
+      "separator": "speechbrain/sepformer-wsj02mix",
+      "separator_revision": "3a2826343a10e2d2e8a75f79aeab5ff3a2473531",
+      "hits": [
+        {
+          "keyword": "fuck",
+          "token_onsets": [
+            4.559999980330467,
+            4.5999999570846555,
+            4.660000004172325
+          ],
+          "supporting_scans": 2,
+          "scan_starts": [
+            4.16,
+            3.2
+          ],
+          "window_start": 0,
+          "window": 0,
+          "voice": "mixture"
+        },
+        {
+          "keyword": "fuck",
+          "token_onsets": [
+            4.599999960660934,
+            4.639999997019768,
+            4.679999973773956
+          ],
+          "supporting_scans": 2,
+          "scan_starts": [
+            3.52,
+            4.16
+          ],
+          "window_start": 0.0,
+          "window": 0,
+          "voice": 0
+        }
+      ],
+      "expected_windows": null,
+      "expected_windows_found": [],
+      "expect_absent": true,
+      "expectation_passed": false,
+      "target_found": null,
+      "extra_hits": [],
+      "timing_note": "Approximate token onsets only; word end boundaries are not established.",
+      "case": "root-negative",
+      "interpretation": "Known-clean synthesized text contains no profanity; these are false detections."
+    }
+  ],
+  "label_review_utc": "2026-11-13T00:25:39.959975+00:00",
+  "native_port": {
+    "updated_utc": "2026-11-13T00:55:10.788436+00:00",
+    "runtime": "Swift, Sherpa-ONNX 2.0.1 C API with int8 keyword model, Core ML fp32 SepFormer",
+    "model_conversion_reference_max_absolute_difference": 0.00068950653,
+    "model_conversion_reference_rmse": 5.6911613e-05,
+    "results": [
+      {
+        "duration": 30,
+        "elapsed": 15.608579993247986,
+        "hits": [
+          {
+            "firstToken": 1533.479999961853,
+            "id": "CA703372-8A55-4D4D-997C-89383C90F570",
+            "keyword": "fuck",
+            "lastToken": 1533.5600000047684,
+            "supportingScans": 3
+          },
+          {
+            "firstToken": 1541.6400000071526,
+            "id": "3BEACAF9-5EBE-4D54-BD09-7605470DC1A4",
+            "keyword": "fuck",
+            "lastToken": 1541.7999999666215,
+            "supportingScans": 3
+          }
+        ],
+        "keyword": "fuck",
+        "padding": 0.25,
+        "start": 1517,
+        "case": "overlap"
+      },
+      {
+        "duration": 13.354375,
+        "elapsed": 5.482530951499939,
+        "hits": [],
+        "keyword": "fuck",
+        "padding": 0.25,
+        "start": 0,
+        "case": "control"
+      }
+    ],
+    "simulator_control_test": {
+      "platform": "iOS 27 simulator",
+      "keyword": "fuck",
+      "flagged_spots": 0,
+      "analysis_seconds_displayed": 14,
+      "analysis_completed": true
+    },
+    "iphone_build_compiled": true,
+    "simulator_build_compiled": true,
+    "unit_tests_passed": 7,
+    "simulator_filtered_preview_started": true,
+    "filtered_audio_samples_verified": true,
+    "simulator_positive_control_test": {
+      "keyword": "funny",
+      "flagged_spots": 2,
+      "analysis_seconds_displayed": 13
+    },
+    "preview_extension_verified": true,
+    "first_mute_unchanged_by_second_extension_verified": true
+  },
+  "phone_listening_feedback": {
+    "reviewed_utc": "2026-11-13T01:25:45.413995+00:00",
+    "first_flag_near": "32:43",
+    "first_flag_verdict": "Correct; keep its current mute range.",
+    "second_flag_near": "32:51",
+    "word_at_second_flag": "funny",
+    "keep_second_flag_muted": true,
+    "policy": "User prefers to filter uncertain speech conservatively.",
+    "additional_word": "fuck",
+    "additional_word_timing": "Almost at the end of the second four-second preview.",
+    "additional_word_exact_onset_verified": false,
+    "additional_word_detected_separately": false,
+    "coverage_method": "User-selected extension through the end of that preview; not a new model recognition."
+  },
+  "normal_playback_reviewed_mutes": {
+    "updated_utc": "2026-11-13T01:44:20.426276+00:00",
+    "user_confirmed_extended_preview_covers_slurred_word": true,
+    "user_description_of_slurred_word": "schfuuuk",
+    "automatic_detection_of_slurred_word": false,
+    "apply_action": "Use these mutes in player",
+    "source_scope": "Reviewed section of the same downloaded episode; stored with audio fingerprint.",
+    "persists_across_relaunch": true,
+    "remove_action": "Remove reviewed mutes from this episode",
+    "player_integration": "Merged with transcript mute ranges before updating the existing real-time audio tap.",
+    "phone_playback_validation": "Awaiting user replay after applying reviewed mutes.",
+    "native_unit_tests_passed": 11
+  }
+}

@@ -4,18 +4,28 @@ import SwiftUI
 struct ShowDetailView: View {
     @Bindable var show: Show
     @Environment(FeedService.self) private var feeds
+    @Environment(\.modelContext) private var context
     @Environment(PlayerController.self) private var player
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingUnsubscribe = false
 
+    private static let recentCount = 25
+
     var body: some View {
+        let episodes = show.sortedEpisodes
         List {
             Section {
                 HStack(alignment: .top, spacing: 14) {
-                    ArtworkView(urlString: show.artworkURL, size: 110, cornerRadius: 12)
+                    VStack(spacing: 6) {
+                        ArtworkView(urlString: show.artworkURL, size: 110, cornerRadius: 12)
+                        if show.isExplicit { ExplicitBadge() }
+                    }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(show.title).font(.title3.bold())
                         Text(show.author).font(.subheadline).foregroundStyle(.secondary)
+                        Button("Unsubscribe", role: .destructive) { confirmingUnsubscribe = true }
+                            .buttonStyle(.bordered)
+                            .padding(.top, 6)
                     }
                 }
                 if !show.summary.isEmpty {
@@ -27,9 +37,29 @@ struct ShowDetailView: View {
                 Toggle("Auto-download new episodes", isOn: $show.autoDownload)
             }
 
+            Section {
+                Toggle("Filter muted words", isOn: $show.filteringEnabled)
+                    .disabled(!DeviceSupport.transcriptionAvailable && !show.filteringEnabled)
+                    .onChange(of: show.filteringEnabled) {
+                        try? context.save()
+                        player.filteringChanged(for: show)
+                    }
+            } footer: {
+                if !DeviceSupport.transcriptionAvailable {
+                    Text("Filtering isn't supported on this device.")
+                } else if show.filteringEnabled {
+                    Text("Episode download required to filter")
+                }
+            }
+
             Section("Episodes") {
-                ForEach(show.sortedEpisodes) { episode in
-                    EpisodeRow(episode: episode, showArtwork: false)
+                ShowEpisodeRows(episodes: Array(episodes.prefix(Self.recentCount)))
+                if episodes.count > Self.recentCount {
+                    NavigationLink {
+                        OlderEpisodesView(title: show.title, episodes: Array(episodes.dropFirst(Self.recentCount)))
+                    } label: {
+                        Label("Older Episodes (\(episodes.count - Self.recentCount))", systemImage: "clock.arrow.circlepath")
+                    }
                 }
             }
         }
@@ -37,15 +67,6 @@ struct ShowDetailView: View {
         .navigationTitle(show.title)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await feeds.refreshAll() }
-        .toolbar {
-            Menu {
-                Button("Unsubscribe", systemImage: "minus.circle", role: .destructive) {
-                    confirmingUnsubscribe = true
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-            }
-        }
         .confirmationDialog(
             "Unsubscribe from \(show.title)?",
             isPresented: $confirmingUnsubscribe,
@@ -57,5 +78,50 @@ struct ShowDetailView: View {
                 dismiss()
             }
         }
+    }
+}
+
+/// Episodes beyond the most recent ones on the show page.
+private struct OlderEpisodesView: View {
+    let title: String
+    let episodes: [Episode]
+
+    var body: some View {
+        List {
+            ShowEpisodeRows(episodes: episodes)
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Older Episodes")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Show-page episode rows: tapping plays (or offers stream/download), swiping deletes a download.
+private struct ShowEpisodeRows: View {
+    let episodes: [Episode]
+    @Environment(DownloadManager.self) private var downloads
+    @Environment(PlayerController.self) private var player
+
+    var body: some View {
+        ForEach(episodes) { episode in
+            EpisodeRow(episode: episode, showArtwork: false, playsOnSelection: true)
+                .swipeActions(edge: .trailing) {
+                    if episode.downloadState == .downloaded || episode.downloadState == .failed {
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            if player.isCurrent(episode) { player.stop() }
+                            downloads.deleteDownload(episode)
+                        }
+                    }
+                }
+        }
+    }
+}
+
+struct ExplicitBadge: View {
+    var body: some View {
+        Label("Explicit", systemImage: "e.square.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Explicit")
     }
 }

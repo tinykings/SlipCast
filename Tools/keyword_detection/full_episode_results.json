@@ -1,0 +1,67 @@
+{
+  "status": "per_show_download_only_filtering_integrated",
+  "engine": "separator-3a282634-fp32-hop1s-full-v1-kws-2.0.1",
+  "source_audio_sha256": "4a7364a83f213f9f7c14f5be8c9fe44a98296e1d0349260e2f15e8b1fd746f2c",
+  "source_note": "Public SmartLess Bill Hader audio; phone ad timing differs.",
+  "completed_excerpt": {
+    "source_start": 1510,
+    "duration": 40,
+    "keywords": [
+      "fuck",
+      "funny"
+    ],
+    "windows_completed": 26,
+    "elapsed_inference_seconds": 111.71172749996185,
+    "hits": [
+      {
+        "firstToken": 21.599999969005587,
+        "id": "CC6ED591-CED6-4E13-B85A-D324A8134958",
+        "keyword": "funny",
+        "lastToken": 21.89999995946884,
+        "supportingScans": 3
+      },
+      {
+        "firstToken": 23.479999969005583,
+        "id": "76B1BAB0-2D37-4B0D-8E26-7A25805EA37E",
+        "keyword": "fuck",
+        "lastToken": 23.560000004768373,
+        "supportingScans": 3
+      },
+      {
+        "firstToken": 31.59999999880791,
+        "id": "7BC76D83-1722-4DFF-A783-8AA316A3702F",
+        "keyword": "fuck",
+        "lastToken": 31.80000000357628,
+        "supportingScans": 3
+      }
+    ],
+    "overlap_keyword_found": true
+  },
+  "long_episode_resume": {
+    "duration": 3809.3322448979593,
+    "total_windows": 3796,
+    "initial_saved_window": 5,
+    "resumed_saved_window": 10,
+    "total_inference_seconds_for_observed_windows": 46.8317449092865,
+    "completed_entire_episode": false,
+    "note": "Intentionally cancelled after five windows, then resumed through ten. This is a checkpoint/resumption and cost measurement, not a completed full-hour recognition test."
+  },
+  "limitations": [
+    "Dense CPU separation is too expensive to promise real-time filtering. Older-device performance and heat remain unmeasured.",
+    "A complete long-episode pass has not been run to the end; the long-file probe was deliberately budget-limited.",
+    "English single-word muted terms receive acoustic checks; phrases and other languages continue to use Apple transcripts.",
+    "The long-file acoustic pass runs only for shows with filtering enabled, after the complete download; there is no filtered streaming.",
+    "The known funny false positive is still possible. The separate slurred swear is not independently proven detected.",
+    "Previously reviewed mute extensions remain in a separate store and are combined in playback."
+  ],
+  "show_policy": {
+    "default": "off",
+    "filtered": "Download completely, finish both scans, then play with combined mutes. No streaming.",
+    "unfiltered": "Stream or download original audio; no speech or overlap processing and no saved mutes applied."
+  },
+  "verification": [
+    "16 native detector/checkpoint/reviewed-mute tests passed.",
+    "8 iOS app integration tests passed: automatic player mutes, changed words, active download/model deletion, no filtered streaming or premature playback, default-off show policy, stopping an active scan when filtering is disabled, and original-audio playback bypassing saved mutes and re-scan pauses.",
+    "iOS Simulator test-host build passed; unsigned iPhone SDK build checked separately."
+  ]
+}

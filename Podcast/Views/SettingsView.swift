@@ -10,7 +10,10 @@ struct SettingsView: View {
     @AppStorage(AppSettings.wifiOnlyKey) private var wifiOnly = true
     @AppStorage(AppSettings.autoDownloadNewKey) private var autoDownloadNew = true
 
+    @AppStorage(AppSettings.autoDeletePlayedKey) private var autoDeletePlayed = false
+
     @State private var newTerm = ""
+    @State private var rescanRequested = false
 
     /// Changes whenever anything affecting the mute ranges changes.
     private var muteSignature: String {
@@ -45,7 +48,7 @@ struct SettingsView: View {
             } header: {
                 Text("Muted Words")
             } footer: {
-                Text("Words are muted wherever they appear, including inside longer words: \"cool\" also mutes \"coolest\" and \"uncool\".")
+                Text("Used only for shows with Filter muted words enabled. Words are muted wherever they appear, including inside longer words: \"cool\" also mutes \"coolest\" and \"uncool\".")
             }
 
             Section {
@@ -59,9 +62,29 @@ struct SettingsView: View {
                 Text("Extra silence before and after each muted word. Increase this if you can still hear the edges of words.")
             }
 
-            Section("Downloads") {
+            Section {
                 Toggle("Auto-download new subscriptions", isOn: $autoDownloadNew)
                 Toggle("Auto-download on Wi-Fi only", isOn: $wifiOnly)
+                Toggle("Auto-delete played episodes", isOn: $autoDeletePlayed)
+            } header: {
+                Text("Downloads")
+            } footer: {
+                Text("Auto-delete removes downloads when episodes finish or you mark them as played. Their played status is kept, and you can download them again.")
+            }
+
+            Section {
+                Button("Re-scan filtered downloads") {
+                    player.rescanDownloads()
+                    rescanRequested = true
+                }
+                if rescanRequested {
+                    Text("Re-scan queued. Follow progress in Downloads.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("On-device Transcription")
+            } footer: {
+                Text("Turn on Filter muted words for each show you want filtered. Those episodes must finish downloading and processing before they play. Muted words are silenced, and passages where people talk over each other are skipped. Unfiltered shows play the original audio.")
             }
         }
         .tabTitle("Settings")
@@ -88,17 +111,7 @@ private struct MutedTermRow: View {
     let term: MutedTerm
 
     var body: some View {
-        Label(Self.masked(term.text), systemImage: "speaker.slash.fill")
+        Label(MuteMatcher.mask(term.text), systemImage: "speaker.slash.fill")
             .accessibilityLabel("Muted word starting with \(term.text.prefix(1).uppercased())")
-    }
-
-    /// Hides each word behind its first letter: "bad word" → "b** w***".
-    static func masked(_ text: String) -> String {
-        text.split(separator: " ", omittingEmptySubsequences: false)
-            .map { word in
-                guard let first = word.first else { return "" }
-                return String(first) + String(repeating: "*", count: word.count - 1)
-            }
-            .joined(separator: " ")
     }
 }

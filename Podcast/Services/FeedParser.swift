@@ -6,6 +6,8 @@ nonisolated struct ParsedFeed: Sendable {
     var summary = ""
     var artworkURL: String?
     var language: String?
+    /// The show-level `itunes:explicit` tag; nil when the feed doesn't say.
+    var isExplicit: Bool?
     var episodes: [ParsedEpisode] = []
 }
 
@@ -123,6 +125,7 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
         case "itunes:author": feed.author = value
         case "description", "itunes:summary": if feed.summary.isEmpty { feed.summary = value }
         case "language": feed.language = value
+        case "itunes:explicit": feed.isExplicit = Self.parseExplicit(value)
         default: break
         }
     }
@@ -148,6 +151,15 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
             if let date = formatter.date(from: value) { return date }
         }
         return nil
+    }
+
+    /// Apple's spec uses true/false; older feeds use yes/no/explicit/clean.
+    static func parseExplicit(_ value: String) -> Bool? {
+        switch value.lowercased() {
+        case "true", "yes", "explicit": true
+        case "false", "no", "clean": false
+        default: nil
+        }
     }
 
     /// Accepts "3600", "59:59" or "1:02:03".

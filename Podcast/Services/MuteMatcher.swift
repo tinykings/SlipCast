@@ -25,27 +25,49 @@ nonisolated enum MuteMatcher {
             .filter { !$0.isEmpty }
     }
 
+    /// Hides each word behind its first letter, keeping punctuation: "bad word," -> "b** w***,".
+    static func mask(_ text: String) -> String {
+        var seenFirst = false
+        return String(text.map { character in
+            if character.isWhitespace { seenFirst = false }
+            guard character.isLetter || character.isNumber else { return character }
+            if seenFirst { return "*" }
+            seenFirst = true
+            return character
+        })
+    }
+
     /// A muted word matches anywhere inside a spoken word ("cool" matches "uncool", "coolest").
     static func matches(_ word: String, _ token: String) -> Bool {
         word.contains(token)
     }
 
+    /// Time ranges to silence for matches found with `matchedWords`.
     static func muteRanges(
+        for matches: [ClosedRange<Int>],
         in words: [TranscriptWord],
-        rules: [MuteRule],
         padding: Double
     ) -> [ClosedRange<Double>] {
+        let hits = matches.map { match in
+            let start = max(0, words[match.lowerBound].start - padding)
+            let end = max(start, words[match.upperBound].end + padding)
+            return start...end
+        }
+        return merge(hits, joiningGapsUnder: 0.08)
+    }
+
+    /// Every match of a rule, as the range of transcript word indices it covers.
+    static func matchedWords(in words: [TranscriptWord], rules: [MuteRule]) -> [ClosedRange<Int>] {
         struct Token {
             let text: String
-            let start: Double
-            let end: Double
+            let wordIndex: Int
         }
-        // Hyphenated transcript words ("son-of-a") become several tokens sharing the word's timing.
-        let tokens: [Token] = words.flatMap { word in
-            tokenize(word.text).map { Token(text: $0, start: word.start, end: word.end) }
+        // Hyphenated transcript words ("son-of-a") become several tokens of the same word.
+        let tokens: [Token] = words.indices.flatMap { index in
+            tokenize(words[index].text).map { Token(text: $0, wordIndex: index) }
         }
 
-        var hits: [ClosedRange<Double>] = []
+        var hits: [ClosedRange<Int>] = []
         for rule in rules where !rule.tokens.isEmpty && rule.tokens.count <= tokens.count {
             let count = rule.tokens.count
             for i in 0...(tokens.count - count) {
@@ -55,13 +77,11 @@ nonisolated enum MuteMatcher {
                     break
                 }
                 if matched {
-                    let start = max(0, tokens[i].start - padding)
-                    let end = max(start, tokens[i + count - 1].end + padding)
-                    hits.append(start...end)
+                    hits.append(tokens[i].wordIndex...tokens[i + count - 1].wordIndex)
                 }
             }
         }
-        return merge(hits, joiningGapsUnder: 0.08)
+        return hits
     }
 
     /// Sorts and merges overlapping (or nearly touching) ranges so volume ramps never overlap.

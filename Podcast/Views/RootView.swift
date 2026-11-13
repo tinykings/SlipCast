@@ -5,11 +5,7 @@ struct RootView: View {
     @State private var showingPlayer = false
 
     var body: some View {
-        if DeviceSupport.transcriptionAvailable {
-            tabs
-        } else {
-            UnsupportedDeviceView()
-        }
+        tabs
     }
 
     private var tabs: some View {

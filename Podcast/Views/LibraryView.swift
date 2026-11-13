@@ -77,10 +77,17 @@ private struct ShowTile: View {
         VStack(alignment: .leading, spacing: 4) {
             ArtworkView(urlString: show.artworkURL, size: 150, cornerRadius: 12)
                 .padding(.bottom, 2)
-            Text(show.title)
-                .font(.subheadline.weight(.medium))
-                .lineLimit(2)
-                .foregroundStyle(.primary)
+            Group {
+                if show.isExplicit {
+                    Text("\(show.title) \(Text(Image(systemName: "e.square.fill")).foregroundStyle(.secondary))")
+                } else {
+                    Text(show.title)
+                }
+            }
+            .font(.subheadline.weight(.medium))
+            .lineLimit(2)
+            .foregroundStyle(.primary)
+            .accessibilityLabel(show.isExplicit ? "\(show.title), explicit" : show.title)
             if let date = show.newestEpisodeDate {
                 Text(date, format: .dateTime.month(.abbreviated).day().year())
                     .font(.caption)

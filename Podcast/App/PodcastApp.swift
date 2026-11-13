@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 @main
-struct PodcastApp: App {
+struct SlipCastApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
 

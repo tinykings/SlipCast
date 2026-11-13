@@ -1,0 +1,129 @@
+{
+  "status": "progress_controls_and_vectorized_audio_added",
+  "phone_report": {
+    "device": "iPhone 16e",
+    "display": "0% and 28 of 1:13:00",
+    "explanation": "28 seconds have been checked. The integer percentage rounds down below one percent; this is not evidence of a stall."
+  },
+  "changes": [
+    "Fractional percent instead of truncation to integer",
+    "Explicit voice-model preparation activity",
+    "Persistent pause/resume control, including immediate-resume cancellation race handling",
+    "Accelerate vector operations for downmixing, voice extraction and normalization; original one-second dense scan remains unchanged"
+  ],
+  "benchmarks": [
+    {
+      "case": "accelerated-shifted",
+      "elapsed": 61.63615298271179,
+      "hits": [
+        {
+          "firstToken": 1533.4599999928473,
+          "id": "0EAF0E94-1927-47E0-871F-5A4EFFDB8A24",
+          "keyword": "fuck",
+          "lastToken": 1533.5600000047684,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 1541.61999997139,
+          "id": "1B3C0BDC-19B9-4949-A91E-F142B6079039",
+          "keyword": "fuck",
+          "lastToken": 1541.7999999666215,
+          "supportingScans": 3
+        }
+      ]
+    },
+    {
+      "case": "accelerated-full-excerpt",
+      "elapsed": 135.7675393819809,
+      "hits": [
+        {
+          "firstToken": 21.599999969005587,
+          "id": "9F482B92-614A-432E-9B32-FD62409412B5",
+          "keyword": "funny",
+          "lastToken": 21.89999995946884,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 23.479999969005583,
+          "id": "98CDF341-40ED-4741-A87E-B870D10762E9",
+          "keyword": "fuck",
+          "lastToken": 23.560000004768373,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 31.59999999880791,
+          "id": "65F3A7FB-90D1-4436-812D-0E4D2C219985",
+          "keyword": "fuck",
+          "lastToken": 31.7999999666214,
+          "supportingScans": 3
+        }
+      ]
+    },
+    {
+      "case": "release-full-excerpt",
+      "elapsed": 188.49454510211945,
+      "hits": [
+        {
+          "firstToken": 21.599999969005587,
+          "id": "E476DEEF-EAB5-4897-842D-9CF478DF36C6",
+          "keyword": "funny",
+          "lastToken": 21.89999995946884,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 23.479999969005583,
+          "id": "47C4863B-2F48-486D-B753-C316F338D4AA",
+          "keyword": "fuck",
+          "lastToken": 23.560000004768373,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 31.59999999880791,
+          "id": "73319947-21E3-441A-B2F7-7B6AA033F29C",
+          "keyword": "fuck",
+          "lastToken": 31.80000000357628,
+          "supportingScans": 3
+        }
+      ]
+    },
+    {
+      "case": "vector-debug-full-excerpt",
+      "elapsed": 198.00457894802094,
+      "hits": [
+        {
+          "firstToken": 21.599999969005587,
+          "id": "0771C48F-AFD8-4272-9127-4D886DBA2DE2",
+          "keyword": "funny",
+          "lastToken": 21.89999995946884,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 23.479999969005583,
+          "id": "CBD91F6F-A0FD-411F-830C-2F00F0D385DB",
+          "keyword": "fuck",
+          "lastToken": 23.560000004768373,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 31.59999999880791,
+          "id": "D032BCA7-33D6-4936-8523-AA13C6006582",
+          "keyword": "fuck",
+          "lastToken": 31.80000000357628,
+          "supportingScans": 3
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Benchmarks include concurrent builds/model inference and are not a controlled speed comparison. No large speedup is claimed.",
+    "CoreML all-compute backend was tested in the standalone probe; the app retains CPU-only as its validated default.",
+    "The dense separator still repeats a 15-second context every second across the whole file. This remains expensive.",
+    "A targeted approach using a validated overlap detector or a lighter separator is future work; no audio is skipped in this change.",
+    "iPhone throughput, thermal behavior and hardware-acceleration benefit have not been measured."
+  ],
+  "verification": [
+    "16 native detector/checkpoint/reviewed-mute tests passed",
+    "9 iOS integration tests passed, including pause/immediate resume and preserving original-audio behavior",
+    "Known overlapping swear remains detected in the completed vectorized full-file excerpt"
+  ]
+}

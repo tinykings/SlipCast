@@ -50,6 +50,8 @@ final class FeedService {
             language: parsed.language,
             autoDownload: AppSettings.autoDownloadNew
         )
+        show.isExplicit = parsed.isExplicit ?? false
+        show.filteringEnabled = show.isExplicit && DeviceSupport.transcriptionAvailable
         context.insert(show)
         apply(parsed, to: show)
         try? context.save()
@@ -119,6 +121,7 @@ final class FeedService {
         if !feed.summary.isEmpty { show.summary = feed.summary }
         if let artwork = feed.artworkURL { show.artworkURL = artwork }
         if let language = feed.language { show.language = language }
+        if let explicit = feed.isExplicit { show.isExplicit = explicit }
         if let newest = feed.episodes.compactMap(\.pubDate).max(),
            newest > (show.latestEpisodeDate ?? .distantPast) {
             show.latestEpisodeDate = newest

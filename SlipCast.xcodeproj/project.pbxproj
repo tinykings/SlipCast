@@ -6,15 +6,37 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AB0000000000000000000001 /* AudioDetection in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000003 /* AudioDetection */; };
+		AD000000000000000000000C /* AudioDetection in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000003 /* AudioDetection */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AD000000000000000000000B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000009 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000006;
+			remoteInfo = SlipCast;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		AA0000000000000000000001 /* Podcast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Podcast.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000001 /* SlipCast.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SlipCast.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000020 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AD0000000000000000000001 /* SlipCastTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SlipCastTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		AA0000000000000000000002 /* Podcast */ = {
+		AA0000000000000000000002 /* SlipCast */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			name = SlipCast;
 			path = Podcast;
+			sourceTree = "<group>";
+		};
+		AD0000000000000000000002 /* SlipCastTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SlipCastTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -24,6 +46,15 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB0000000000000000000001 /* AudioDetection in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AD0000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AD000000000000000000000C /* AudioDetection in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -33,7 +64,8 @@
 		AA0000000000000000000004 = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000002 /* Podcast */,
+				AA0000000000000000000002 /* SlipCast */,
+				AD0000000000000000000002 /* SlipCastTests */,
 				AA0000000000000000000021 /* Config */,
 				AA0000000000000000000005 /* Products */,
 			);
@@ -42,7 +74,8 @@
 		AA0000000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000001 /* Podcast.app */,
+				AA0000000000000000000001 /* SlipCast.app */,
+				AD0000000000000000000001 /* SlipCastTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -58,9 +91,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AA0000000000000000000006 /* Podcast */ = {
+		AA0000000000000000000006 /* SlipCast */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA000000000000000000000A /* Build configuration list for PBXNativeTarget "Podcast" */;
+			buildConfigurationList = AA000000000000000000000A /* Build configuration list for PBXNativeTarget "SlipCast" */;
 			buildPhases = (
 				AA0000000000000000000007 /* Sources */,
 				AA0000000000000000000003 /* Frameworks */,
@@ -71,14 +104,39 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				AA0000000000000000000002 /* Podcast */,
+				AA0000000000000000000002 /* SlipCast */,
 			);
-			name = Podcast;
+			name = SlipCast;
 			packageProductDependencies = (
+				AB0000000000000000000003 /* AudioDetection */,
 			);
-			productName = Podcast;
-			productReference = AA0000000000000000000001 /* Podcast.app */;
+			productName = SlipCast;
+			productReference = AA0000000000000000000001 /* SlipCast.app */;
 			productType = "com.apple.product-type.application";
+		};
+		AD0000000000000000000003 /* SlipCastTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AD0000000000000000000004 /* Build configuration list for PBXNativeTarget "SlipCastTests" */;
+			buildPhases = (
+				AD0000000000000000000007 /* Sources */,
+				AD0000000000000000000008 /* Frameworks */,
+				AD0000000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AD000000000000000000000A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AD0000000000000000000002 /* SlipCastTests */,
+			);
+			name = SlipCastTests;
+			packageProductDependencies = (
+				AB0000000000000000000003 /* AudioDetection */,
+			);
+			productName = SlipCastTests;
+			productReference = AD0000000000000000000001 /* SlipCastTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -93,9 +151,13 @@
 					AA0000000000000000000006 = {
 						CreatedOnToolsVersion = 27.2;
 					};
+					AD0000000000000000000003 = {
+						CreatedOnToolsVersion = 27.2;
+						TestTargetID = AA0000000000000000000006;
+					};
 				};
 			};
-			buildConfigurationList = AA000000000000000000000B /* Build configuration list for PBXProject "Podcast" */;
+			buildConfigurationList = AA000000000000000000000B /* Build configuration list for PBXProject "SlipCast" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -104,18 +166,29 @@
 			);
 			mainGroup = AA0000000000000000000004;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AB0000000000000000000002 /* XCLocalSwiftPackageReference "Packages/AudioDetection" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA0000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AA0000000000000000000006 /* Podcast */,
+				AD0000000000000000000003 /* SlipCastTests */,
+				AA0000000000000000000006 /* SlipCast */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AA0000000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AD0000000000000000000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -132,7 +205,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AD0000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AD000000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000006 /* SlipCast */;
+			targetProxy = AD000000000000000000000B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA000000000000000000000C /* Debug */ = {
@@ -251,10 +339,52 @@
 			};
 			name = Release;
 		};
+		AD0000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 7F4K5N55BN;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.tinyking.slipcast.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SlipCast.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SlipCast";
+			};
+			name = Debug;
+		};
+		AD0000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 7F4K5N55BN;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.tinyking.slipcast.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SlipCast.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SlipCast";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA000000000000000000000A /* Build configuration list for PBXNativeTarget "Podcast" */ = {
+		AA000000000000000000000A /* Build configuration list for PBXNativeTarget "SlipCast" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA000000000000000000000E /* Debug */,
@@ -263,7 +393,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AA000000000000000000000B /* Build configuration list for PBXProject "Podcast" */ = {
+		AA000000000000000000000B /* Build configuration list for PBXProject "SlipCast" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA000000000000000000000C /* Debug */,
@@ -272,7 +402,31 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		AD0000000000000000000004 /* Build configuration list for PBXNativeTarget "SlipCastTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AD0000000000000000000005 /* Debug */,
+				AD0000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		AB0000000000000000000002 /* XCLocalSwiftPackageReference "Packages/AudioDetection" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AudioDetection;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AB0000000000000000000003 /* AudioDetection */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AB0000000000000000000002 /* XCLocalSwiftPackageReference "Packages/AudioDetection" */;
+			productName = AudioDetection;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AA0000000000000000000009 /* Project object */;
 }

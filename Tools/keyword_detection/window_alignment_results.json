@@ -1,0 +1,144 @@
+{
+  "version": "separator-3a282634-fp32-hop1s-v2-kws-2.0.1",
+  "problem": "The same overlapping swear disappeared from detection when section start changed from 1517 to 1520 seconds. The later funny false positive remained.",
+  "change": "Reduced voice-separation window hop from five seconds to one second; same model and keyword thresholds.",
+  "source_audio_sha256": "4a7364a83f213f9f7c14f5be8c9fe44a98296e1d0349260e2f15e8b1fd746f2c",
+  "phone_report": "Word remains audible in Filtered test preview near 31:20 on phone copy; exact phone audio has not been obtained.",
+  "baseline_5_second_hop": [
+    {
+      "section_start": 1517,
+      "elapsed_seconds": 14.691669940948486,
+      "overlap_detected": true,
+      "hits": [
+        {
+          "firstToken": 1533.479999961853,
+          "id": "ED17E5D8-C93D-4C5F-B4C4-CE5F0214C57A",
+          "keyword": "fuck",
+          "lastToken": 1533.5600000047684,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 1541.6400000071526,
+          "id": "6DE35FD3-0A81-40A5-B210-F050260B3DC1",
+          "keyword": "fuck",
+          "lastToken": 1541.7999999666215,
+          "supportingScans": 3
+        }
+      ]
+    },
+    {
+      "section_start": 1520,
+      "elapsed_seconds": 14.89917004108429,
+      "overlap_detected": false,
+      "hits": [
+        {
+          "firstToken": 1541.6199999797345,
+          "id": "596D0EE9-7D55-414A-A063-A9B3939BCC16",
+          "keyword": "fuck",
+          "lastToken": 1541.7800000059606,
+          "supportingScans": 2
+        }
+      ]
+    },
+    {
+      "section_start": 1522,
+      "elapsed_seconds": 16.11157202720642,
+      "overlap_detected": true,
+      "hits": [
+        {
+          "firstToken": 1533.479999961853,
+          "id": "8993E4A0-B428-41F4-A820-58B83602872C",
+          "keyword": "fuck",
+          "lastToken": 1533.5600000047684,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 1541.6399999523162,
+          "id": "F5E88082-39C6-4B47-8621-287B44A60B68",
+          "keyword": "fuck",
+          "lastToken": 1541.7999999666215,
+          "supportingScans": 3
+        }
+      ]
+    }
+  ],
+  "updated_1_second_hop": [
+    {
+      "section_start": 1517,
+      "elapsed_seconds": 55.772459983825684,
+      "overlap_detected": true,
+      "hits": [
+        {
+          "firstToken": 1533.4599999928473,
+          "id": "98F53C30-1B4B-4962-AC3E-01BB44E8C751",
+          "keyword": "fuck",
+          "lastToken": 1533.5600000047684,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 1541.61999997139,
+          "id": "FBD7B535-6EE3-4C92-BCE6-8A12B98BEA11",
+          "keyword": "fuck",
+          "lastToken": 1541.7999999666215,
+          "supportingScans": 3
+        }
+      ]
+    },
+    {
+      "section_start": 1520,
+      "elapsed_seconds": 131.34219193458557,
+      "overlap_detected": true,
+      "hits": [
+        {
+          "firstToken": 1533.4599999928473,
+          "id": "5E9ED5AA-7A92-4EFE-B789-94C7529B52CD",
+          "keyword": "fuck",
+          "lastToken": 1533.5600000047684,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 1541.61999997139,
+          "id": "C2653DB2-DC55-4B29-A726-AA6E5D9453F2",
+          "keyword": "fuck",
+          "lastToken": 1541.7999999666215,
+          "supportingScans": 3
+        }
+      ]
+    },
+    {
+      "section_start": 1518.5,
+      "elapsed_seconds": 181.7081469297409,
+      "overlap_detected": true,
+      "hits": [
+        {
+          "firstToken": 1533.4599999523164,
+          "id": "FE3DDD9A-8716-4F29-A716-5CBBB2D840AF",
+          "keyword": "fuck",
+          "lastToken": 1533.5799999570847,
+          "supportingScans": 3
+        },
+        {
+          "firstToken": 1541.6599999523162,
+          "id": "6E00EE27-EF71-40D8-BFE4-100B9F6DD8CB",
+          "keyword": "fuck",
+          "lastToken": 1541.799999997616,
+          "supportingScans": 3
+        }
+      ]
+    }
+  ],
+  "clean_control_flag_count": 0,
+  "validation": [
+    "Overlap region is zero in filtered native output for both original and previously failing section positions.",
+    "Audio outside proposed mute ranges and fades is unchanged.",
+    "11 detector/reviewed-mute tests pass.",
+    "Unsigned iPhone and simulator builds pass."
+  ],
+  "limitations": [
+    "Denser separation costs more inference time; elapsed times here include concurrent build/probe workloads and are not phone benchmarks.",
+    "The known funny false positive remains; user previously chose to keep uncertain mutes.",
+    "This does not prove the later slurred swear is detected.",
+    "Exact phone copy still requires listening/reproduction. Export original and filtered clips with JSON report if the miss persists.",
+    "Simulator UI check was unavailable after expired-reference and app-not-running errors; no share-sheet flow was verified."
+  ]
+}

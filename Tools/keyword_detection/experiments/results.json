@@ -1,0 +1,98 @@
+{
+  "duration": 3861.0739682539684,
+  "elapsed_seconds": 49.633444041999994,
+  "model_sha256": "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079",
+  "model_bytes": 5992913,
+  "hop_seconds": 2.5,
+  "cpu_threads": 2,
+  "thresholds": [
+    {
+      "threshold": 0.03,
+      "flagged_seconds": 1948.4,
+      "dense_windows_retained": 3780,
+      "total_dense_windows": 3848,
+      "retained_fraction": 0.9823284823284824,
+      "known_overlap_included": true
+    },
+    {
+      "threshold": 0.1,
+      "flagged_seconds": 1317.7,
+      "dense_windows_retained": 3687,
+      "total_dense_windows": 3848,
+      "retained_fraction": 0.9581600831600832,
+      "known_overlap_included": true
+    },
+    {
+      "threshold": 0.25,
+      "flagged_seconds": 911.7,
+      "dense_windows_retained": 3577,
+      "total_dense_windows": 3848,
+      "retained_fraction": 0.9295738045738046,
+      "known_overlap_included": true
+    },
+    {
+      "threshold": 0.5,
+      "flagged_seconds": 613.1,
+      "dense_windows_retained": 3458,
+      "total_dense_windows": 3848,
+      "retained_fraction": 0.8986486486486487,
+      "known_overlap_included": true
+    }
+  ],
+  "phone_tested": false,
+  "status": "prototype_not_integrated_into_app",
+  "conclusions": [
+    "Small segmentation model detected the known overlapping swear in the public copy.",
+    "Keeping every 15-second separation window touching detected overlap retains most windows on this conversation-heavy show; this alone is not a substantial solution.",
+    "A broad fast mode could mute detected overlap passages directly, at the cost of muting clean dialogue. It has not been enabled or approved."
+  ],
+  "smaller_separator": {
+    "model": "torchaudio.pipelines.CONVTASNET_BASE_LIBRI2MIX",
+    "results": [
+      {
+        "start": 1527,
+        "separation_elapsed": 0.9619292499999998,
+        "total_elapsed": 2.51291025,
+        "hits": []
+      },
+      {
+        "start": 1520,
+        "separation_elapsed": 0.770492709,
+        "total_elapsed": 2.119845917,
+        "hits": []
+      },
+      {
+        "start": 1532,
+        "separation_elapsed": 0.6591951250000001,
+        "total_elapsed": 2.1032024170000003,
+        "hits": [
+          {
+            "keyword": "fuck",
+            "token_onsets": [
+              1541.6799999690056,
+              1541.7199999904633,
+              1541.799999973774
+            ],
+            "supporting_scans": 3,
+            "scan_starts": [
+              1541.28,
+              1540.96,
+              1540.64
+            ],
+            "window_start": 1532,
+            "window": 0,
+            "voice": 0
+          }
+        ]
+      }
+    ],
+    "conclusion": "Faster separation candidate did not recover the overlapping target in the tested contexts. It was not substituted into the app."
+  },
+  "limitations": [
+    "Mac Python CPU prototypes; no iPhone measurements.",
+    "Public episode differs from the phone copy.",
+    "The later slurred swear is not reliably marked as overlap.",
+    "SoundFile duration differs from AVAudioFile duration for this MP3; production time mapping would require validation.",
+    "Detector-only overlap muting deliberately suppresses clean overlapping speech too."
+  ]
+}

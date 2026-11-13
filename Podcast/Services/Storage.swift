@@ -15,7 +15,9 @@ nonisolated enum Storage {
     }
 
     static var bytesUsed: Int64 {
-        let urls = [episodesDirectory, transcriptsDirectory]
+        let urls = [episodesDirectory, transcriptsDirectory,
+                    URL.applicationSupportDirectory.appending(path: "FastOverlapScans"),
+                    URL.applicationSupportDirectory.appending(path: "ReviewedAudioMutes")]
         var total: Int64 = 0
         for dir in urls {
             let files = (try? FileManager.default.contentsOfDirectory(
@@ -25,6 +27,13 @@ nonisolated enum Storage {
             }
         }
         return total
+    }
+
+    /// Checkpoints and compiled models from the slow separation scanner, which the app no longer has.
+    static func removeObsoleteFiles() {
+        let fileManager = FileManager.default
+        try? fileManager.removeItem(at: URL.applicationSupportDirectory.appending(path: "EpisodeAudioScans"))
+        try? fileManager.removeItem(at: URL.cachesDirectory.appending(path: "SlipCastAudioModels"))
     }
 
     private static func directory(named name: String) -> URL {
@@ -40,20 +49,25 @@ nonisolated enum Storage {
 }
 
 nonisolated enum AppSettings {
+    static let processingPausedKey = "filterProcessingPaused"
     static let paddingKey = "mutePaddingMs"
     static let wifiOnlyKey = "autoDownloadWiFiOnly"
+    static let autoDeletePlayedKey = "autoDeletePlayedEpisodes"
     static let autoDownloadNewKey = "autoDownloadNewSubscriptions"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
             paddingKey: 200.0,
+            processingPausedKey: false,
             wifiOnlyKey: true,
             autoDownloadNewKey: true,
+            autoDeletePlayedKey: false,
         ])
     }
 
     /// Extra silence on each side of a muted word, in seconds. ASR word boundaries are approximate.
     static var padding: Double { UserDefaults.standard.double(forKey: paddingKey) / 1000 }
     static var wifiOnly: Bool { UserDefaults.standard.bool(forKey: wifiOnlyKey) }
+    static var autoDeletePlayed: Bool { UserDefaults.standard.bool(forKey: autoDeletePlayedKey) }
     static var autoDownloadNew: Bool { UserDefaults.standard.bool(forKey: autoDownloadNewKey) }
 }

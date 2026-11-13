@@ -14,6 +14,7 @@ final class AppEnvironment {
 
     private init() {
         AppSettings.registerDefaults()
+        Storage.removeObsoleteFiles()
         do {
             container = try ModelContainer(for: Show.self, Episode.self, MutedTerm.self)
         } catch {

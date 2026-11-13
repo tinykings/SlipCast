@@ -1,4 +1,5 @@
 import Foundation
+import AudioDetection
 import Observation
 import SwiftData
 
@@ -52,7 +53,7 @@ final class DownloadManager: NSObject {
     func stream(_ episode: Episode) -> StreamingSession? {
         let id = episode.episodeID
         if let existing = streams[id] { return existing }
-        guard episode.downloadState != .downloaded, let url = URL(string: episode.audioURL) else { return nil }
+        guard !episode.requiresFiltering, episode.downloadState != .downloaded, let url = URL(string: episode.audioURL) else { return nil }
 
         if episode.downloadState == .queued || episode.downloadState == .downloading {
             Task {
@@ -76,17 +77,27 @@ final class DownloadManager: NSObject {
         try? context.save()
         stream.start()
 
-        processing.transcribeWhileDownloading(episode, estimatedDuration: episode.duration ?? 0) { format in
-            stream.makeAnalyzerInput(format: format)
-        }
         return stream
+    }
+
+    func filteringChanged(for show: Show) {
+        for episode in show.episodes {
+            guard let stream = streams.removeValue(forKey: episode.episodeID) else { continue }
+            stream.cancel()
+            progress[episode.episodeID] = nil
+            episode.downloadState = .notDownloaded
+            episode.processingState = .none
+            // Filtering never consumes a partial stream; switch to a complete download.
+            if show.filteringEnabled { download(episode, userInitiated: true) }
+        }
+        try? context.save()
     }
 
     func cancel(_ episode: Episode) {
         let id = episode.episodeID
         if let stream = streams.removeValue(forKey: id) {
             stream.cancel()
-            processing.cancelStreaming(id)
+            processing.cancel(id)
         }
         episode.downloadState = .notDownloaded
         progress[id] = nil
@@ -100,6 +111,7 @@ final class DownloadManager: NSObject {
 
     /// Removes the audio and transcript. The episode can be downloaded again later.
     func deleteDownload(_ episode: Episode) {
+        processing.cancel(episode.episodeID)
         if episode.downloadState == .queued || episode.downloadState == .downloading {
             cancel(episode)
         }
@@ -107,6 +119,8 @@ final class DownloadManager: NSObject {
             try? FileManager.default.removeItem(at: url)
         }
         TranscriptStore.delete(episodeID: episode.episodeID)
+        try? ReviewedMuteStore().remove(episodeID: episode.episodeID)
+        try? OverlapScanStore().remove(episodeID: episode.episodeID)
         episode.fileName = nil
         episode.downloadedAt = nil
         episode.downloadState = .notDownloaded
@@ -183,14 +197,14 @@ final class DownloadManager: NSObject {
         stream.commitDownload()
 
         // Not scanned while downloading (unsupported format or interrupted): scan it now.
-        if episode.processingState == .none || episode.processingState == .pending {
+        if episode.requiresFiltering && (episode.processingState == .none || episode.processingState == .pending) {
             processing.processNow(episode)
         }
     }
 
     private func failStreaming(_ id: String) {
         streams[id] = nil
-        processing.cancelStreaming(id)
+        processing.cancel(id)
         fail(id)
     }
 

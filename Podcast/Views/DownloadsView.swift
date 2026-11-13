@@ -9,6 +9,7 @@ struct DownloadsView: View {
     )
     private var episodes: [Episode]
 
+    @Environment(ProcessingQueue.self) private var processing
     @Environment(DownloadManager.self) private var downloads
     @Environment(PlayerController.self) private var player
 
@@ -17,7 +18,7 @@ struct DownloadsView: View {
     }
 
     private var problems: [Episode] {
-        episodes.filter { $0.downloadState == .failed || $0.processingState == .failed }
+        episodes.filter { $0.downloadState == .failed || ($0.requiresFiltering && $0.processingState == .failed) }
     }
 
     private var ready: [Episode] {
@@ -26,7 +27,7 @@ struct DownloadsView: View {
 
     /// Downloaded episodes in the order shown (scanning ones first, then ready).
     private var playAllEpisodes: [Episode] {
-        (inProgress + ready).filter { $0.downloadState == .downloaded && $0.processingState != .failed }
+        (inProgress + ready).filter { $0.downloadState == .downloaded && PlayerController.canPlay($0) }
     }
 
     var body: some View {
@@ -56,12 +57,21 @@ struct DownloadsView: View {
                 ContentUnavailableView(
                     "No Downloads",
                     systemImage: "arrow.down.circle",
-                    description: Text("Downloaded episodes appear here. Muted words are scanned for as they download.")
+                    description: Text("Downloaded episodes appear here. Enable filtering in a show’s settings to prepare its downloads for muted-word playback.")
                 )
             }
         }
         .tabTitle("Downloads")
         .toolbar {
+            if processing.hasPendingWork || processing.isPaused {
+                Button {
+                    if processing.isPaused { processing.resumeProcessing() }
+                    else { processing.pauseProcessing() }
+                } label: {
+                    Label(processing.isPaused ? "Resume filtering" : "Pause filtering",
+                          systemImage: processing.isPaused ? "play" : "pause")
+                }
+            }
             if !playAllEpisodes.isEmpty {
                 Button {
                     player.playAll(playAllEpisodes)
@@ -79,7 +89,7 @@ struct DownloadsView: View {
     }
 
     private func row(_ episode: Episode) -> some View {
-        EpisodeRow(episode: episode)
+        EpisodeRow(episode: episode, playsOnSelection: true, showsRemainingTime: true)
             .swipeActions {
                 Button("Delete", systemImage: "trash", role: .destructive) {
                     if player.isCurrent(episode) { player.stop() }

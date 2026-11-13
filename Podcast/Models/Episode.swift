@@ -16,7 +16,7 @@ enum ProcessingState: String, Codable {
     /// Downloaded, waiting to be transcribed.
     case pending
     case processing
-    /// Transcript saved; muting can be applied.
+    /// Transcript and automatic overlap scan saved; muting can be applied.
     case ready
     case failed
 }
@@ -77,15 +77,17 @@ final class Episode {
         fileName.map { Storage.episodesDirectory.appending(path: $0) }
     }
 
-    /// Downloaded and fully scanned for muted words.
+    var requiresFiltering: Bool { show?.filteringEnabled == true }
+
+    /// Downloaded; filtered shows also require both processing passes.
     var isReady: Bool {
-        downloadState == .downloaded && processingState == .ready
+        downloadState == .downloaded && (!requiresFiltering || processingState == .ready)
     }
 
     /// Downloading, or downloaded and still being scanned.
     var isInProgress: Bool {
         downloadState == .queued || downloadState == .downloading
-            || (downloadState == .downloaded && (processingState == .pending || processingState == .processing))
+            || (downloadState == .downloaded && requiresFiltering && (processingState == .pending || processingState == .processing))
     }
 
     var artworkURL: String? { imageURL ?? show?.artworkURL }
