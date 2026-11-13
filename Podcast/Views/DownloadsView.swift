@@ -33,8 +33,25 @@ struct DownloadsView: View {
     var body: some View {
         List {
             if !inProgress.isEmpty {
-                Section("In Progress") {
+                Section {
                     ForEach(inProgress) { row($0) }
+                } header: {
+                    HStack {
+                        Text("In Progress")
+                        Spacer()
+                        if processing.hasPendingWork || processing.isPaused {
+                            Button {
+                                if processing.isPaused { processing.resumeProcessing() }
+                                else { processing.pauseProcessing() }
+                            } label: {
+                                Label(processing.isPaused ? "Resume" : "Pause",
+                                      systemImage: processing.isPaused ? "play.fill" : "pause.fill")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .textCase(nil)
+                            .accessibilityLabel(processing.isPaused ? "Resume filtering" : "Pause filtering")
+                        }
+                    }
                 }
             }
             if !problems.isEmpty {
@@ -46,7 +63,19 @@ struct DownloadsView: View {
                 Section {
                     ForEach(ready) { row($0) }
                 } header: {
-                    Text("Ready to Play")
+                    HStack {
+                        Text("Ready to Play")
+                        Spacer()
+                        if !playAllEpisodes.isEmpty {
+                            Button {
+                                player.playAll(playAllEpisodes)
+                            } label: {
+                                Label("Play All", systemImage: "play.fill")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .textCase(nil)
+                        }
+                    }
                 } footer: {
                     Text("Using \(Format.bytes(Storage.bytesUsed)) of storage.")
                 }
@@ -62,30 +91,6 @@ struct DownloadsView: View {
             }
         }
         .tabTitle("Downloads")
-        .toolbar {
-            if processing.hasPendingWork || processing.isPaused {
-                Button {
-                    if processing.isPaused { processing.resumeProcessing() }
-                    else { processing.pauseProcessing() }
-                } label: {
-                    Label(processing.isPaused ? "Resume filtering" : "Pause filtering",
-                          systemImage: processing.isPaused ? "play" : "pause")
-                }
-            }
-            if !playAllEpisodes.isEmpty {
-                Button {
-                    player.playAll(playAllEpisodes)
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "play.fill")
-                        Text("Play All")
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 4)
-                }
-                .accessibilityLabel("Play All")
-            }
-        }
     }
 
     private func row(_ episode: Episode) -> some View {

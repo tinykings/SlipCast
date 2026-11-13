@@ -6,31 +6,36 @@ struct PlayerView: View {
 
     private let rates: [Float] = [0.8, 1, 1.2, 1.5, 1.75, 2]
 
-    /// Muted-spot markers and the transcript (in place of the artwork). Off each time the player
-    /// opens; toggled by tapping the muted-words count.
-    @State private var showsMuteDetails = false
+    /// Pages swiped through in place of the artwork. Swiping right from the artwork shows the
+    /// transcript, swiping left shows the player settings.
+    private enum Page: CaseIterable {
+        case transcript, artwork, settings
+    }
+
+    /// Back to the artwork each time the player opens.
+    @State private var page = Page.artwork
+    @State private var showingNotes = false
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             Capsule().fill(.tertiary).frame(width: 40, height: 5).padding(.top, 8)
 
             if let episode = player.episode {
+                filteredCount(episode)
+                    .opacity(page == .transcript ? 1 : 0)
+                    .animation(.easeOut(duration: 0.2), value: page)
+
                 Spacer(minLength: 0)
-                if showsMuteDetails && episode.requiresFiltering {
-                    TranscriptView(
-                        lines: player.transcriptLines,
-                        currentTime: player.currentTime,
-                        playableLimit: player.playableLimit,
-                        isFullyScanned: player.isFullyScanned,
-                        onSeek: player.seek(to:)
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: 340)
-                    .transition(.opacity)
-                } else {
-                    ArtworkView(urlString: episode.artworkURL, size: 280, cornerRadius: 20)
-                        .shadow(radius: 12, y: 6)
-                        .transition(.opacity)
+
+                TabView(selection: $page) {
+                    transcriptPage(episode).tag(Page.transcript)
+                    artworkPage(episode).tag(Page.artwork)
+                    settingsPage.tag(Page.settings)
                 }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 320)
+
+                pageIndicator
 
                 VStack(spacing: 6) {
                     Text(episode.title)
@@ -40,6 +45,11 @@ struct PlayerView: View {
                     Text(episode.show?.title ?? "")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    if !player.upNext.isEmpty {
+                        Label("\(player.upNext.count) up next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.horizontal)
 
@@ -48,10 +58,11 @@ struct PlayerView: View {
                     duration: player.duration,
                     playableLimit: player.playableLimit,
                     isFullyScanned: player.isFullyScanned,
-                    muteMarkers: showsMuteDetails ? player.mutedRanges : [],
+                    muteMarkers: page == .transcript ? player.mutedRanges : [],
                     onSeek: player.seek(to:)
                 )
                 .padding(.horizontal, 24)
+                .animation(.easeOut(duration: 0.2), value: page)
 
                 if let error = player.scanError {
                     Label(error, systemImage: "exclamationmark.triangle")
@@ -82,59 +93,113 @@ struct PlayerView: View {
                     }
                 }
                 .buttonStyle(.plain)
-
-                HStack {
-                    Menu {
-                        ForEach(rates, id: \.self) { rate in
-                            Button(rateLabel(rate)) { player.rate = rate }
-                        }
-                    } label: {
-                        Label(rateLabel(player.rate), systemImage: "speedometer")
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 44)
-                            .background(.tint.opacity(0.12), in: .capsule)
-                    }
-                    .accessibilityLabel("Playback speed")
-                    .accessibilityValue(rateLabel(player.rate))
-                    Spacer(minLength: 12)
-                    if episode.requiresFiltering {
-                        Button {
-                            withAnimation(.easeOut(duration: 0.2)) { showsMuteDetails.toggle() }
-                        } label: {
-                            Label(
-                                player.mutedSpotCount == 1 ? "1 filtered section" : "\(player.mutedSpotCount) filtered sections",
-                                systemImage: showsMuteDetails ? "speaker.slash.fill" : "speaker.slash"
-                            )
-                            .font(.subheadline)
-                            .foregroundStyle(.tint)
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 44)
-                            .background(.tint.opacity(showsMuteDetails ? 0.22 : 0.12), in: .capsule)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityHint(showsMuteDetails ? "Shows the artwork again" : "Shows the transcript and sections skipped on the timeline")
-                    } else {
-                        Label("Filtering off", systemImage: "speaker.wave.2")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal, 28)
-
-                if !player.upNext.isEmpty {
-                    Label("\(player.upNext.count) up next", systemImage: "text.line.first.and.arrowtriangle.forward")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 0)
+                .padding(.bottom, 12)
+                .sheet(isPresented: $showingNotes) { ShowNotesView(episode: episode) }
             } else {
                 ContentUnavailableView("Nothing Playing", systemImage: "play.slash")
             }
         }
         .presentationDragIndicator(.hidden)
-        .onChange(of: player.episode?.id) { showsMuteDetails = false }
+        .onChange(of: player.episode?.id) { page = .artwork }
+    }
+
+    private func filteredCount(_ episode: Episode) -> some View {
+        Group {
+            if episode.requiresFiltering {
+                Label(
+                    player.mutedSpotCount == 1 ? "1 filtered section" : "\(player.mutedSpotCount) filtered sections",
+                    systemImage: "speaker.slash.fill"
+                )
+                .foregroundStyle(.tint)
+            } else {
+                Label("Filtering off", systemImage: "speaker.wave.2")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.subheadline.weight(.semibold))
+        .frame(minHeight: 22)
+    }
+
+    @ViewBuilder
+    private func transcriptPage(_ episode: Episode) -> some View {
+        if episode.requiresFiltering {
+            TranscriptView(
+                lines: player.transcriptLines,
+                currentTime: player.currentTime,
+                playableLimit: player.playableLimit,
+                isFullyScanned: player.isFullyScanned,
+                onSeek: player.seek(to:)
+            )
+        } else {
+            Text("Turn on filtering in this show’s settings to see its transcript.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(32)
+        }
+    }
+
+    private func artworkPage(_ episode: Episode) -> some View {
+        Button { showingNotes = true } label: {
+            ArtworkView(urlStrings: episode.artworkCandidates, size: 280, cornerRadius: 20)
+                .shadow(radius: 12, y: 6)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Artwork")
+        .accessibilityHint("Shows the show notes")
+    }
+
+    private var settingsPage: some View {
+        VStack(spacing: 14) {
+            Label("Playback Speed", systemImage: "speedometer")
+                .font(.headline)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                ForEach(rates, id: \.self) { rate in
+                    let isSelected = player.rate == rate
+                    Button { player.rate = rate } label: {
+                        Text(rateLabel(rate))
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(isSelected ? AnyShapeStyle(Color.onAccent) : AnyShapeStyle(.tint))
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .background(
+                                isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tint.opacity(0.12)),
+                                in: .capsule
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(rateLabel(rate)) speed")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+        }
+        .padding(.horizontal, 40)
+    }
+
+    private var pageIndicator: some View {
+        HStack(spacing: 8) {
+            ForEach(Page.allCases, id: \.self) { item in
+                Button {
+                    withAnimation { page = item }
+                } label: {
+                    Circle()
+                        .fill(item == page ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                        .frame(width: 7, height: 7)
+                        .padding(4)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(pageName(item))
+                .accessibilityAddTraits(item == page ? .isSelected : [])
+            }
+        }
+    }
+
+    private func pageName(_ page: Page) -> String {
+        switch page {
+        case .transcript: "Transcript"
+        case .artwork: "Artwork"
+        case .settings: "Player settings"
+        }
     }
 
     private func rateLabel(_ rate: Float) -> String {
@@ -147,7 +212,7 @@ struct MiniPlayerView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ArtworkView(urlString: player.episode?.artworkURL, size: 32, cornerRadius: 6)
+            ArtworkView(urlStrings: player.episode?.artworkCandidates ?? [], size: 32, cornerRadius: 6)
             Text(player.episode?.title ?? "")
                 .font(.subheadline.weight(.medium))
                 .lineLimit(1)
@@ -164,6 +229,40 @@ struct MiniPlayerView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 14)
+    }
+}
+
+struct ShowNotesView: View {
+    let episode: Episode
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let notes = episode.summary.htmlAsPlainText
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(episode.title)
+                        .font(.title3.bold())
+                    if notes.isEmpty {
+                        Text("This episode has no show notes.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(notes)
+                            .textSelection(.enabled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+            }
+            .navigationTitle("Show Notes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

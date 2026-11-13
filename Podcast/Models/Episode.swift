@@ -91,6 +91,9 @@ final class Episode {
     }
 
     var artworkURL: String? { imageURL ?? show?.artworkURL }
+
+    /// Artwork URLs to try, best first: the episode's own, then the show's.
+    var artworkCandidates: [String?] { [imageURL] + (show?.artworkCandidates ?? []) }
 }
 
 extension ModelContext {

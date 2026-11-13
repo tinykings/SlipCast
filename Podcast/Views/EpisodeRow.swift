@@ -6,6 +6,7 @@ struct EpisodeRow: View {
     var showArtwork = true
     var playsOnSelection = false
     var showsRemainingTime = false
+    var showsDownloadedBadge = false
 
     @Environment(\.modelContext) private var context
     @Environment(DownloadManager.self) private var downloads
@@ -79,30 +80,37 @@ struct EpisodeRow: View {
                 }
             }
             Button(episode.isPlayed ? "Mark as Unplayed" : "Mark as Played", systemImage: "checkmark.circle") {
-                let markAsPlayed = !episode.isPlayed
-                if markAsPlayed && AppSettings.autoDeletePlayed {
-                    if player.isCurrent(episode) { player.stop() }
-                    downloads.deleteDownload(episode)
-                }
-                episode.isPlayed = markAsPlayed
-                episode.playbackPosition = 0
-                try? context.save()
+                EpisodePlayedState.set(!episode.isPlayed, on: [episode], player: player, downloads: downloads, context: context)
             }
         }
     }
 
     private var episodeContent: some View {
         HStack(spacing: 12) {
+            if episode.isPlayed {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Played")
+            }
             if showArtwork {
-                ArtworkView(urlString: episode.artworkURL, size: 48)
+                ArtworkView(urlStrings: episode.artworkCandidates, size: 48)
+                    .opacity(episode.isPlayed ? 0.5 : 1)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(metadata)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    if showsDownloadedBadge && episode.downloadState == .downloaded {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundStyle(episode.isPlayed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
+                            .accessibilityLabel("Downloaded")
+                    }
+                    Text(metadata)
+                        .foregroundStyle(episode.isPlayed ? .tertiary : .secondary)
+                }
+                .font(.caption)
                 Text(episode.title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(episode.isPlayed ? .secondary : .primary)
+                    .foregroundStyle(episode.isPlayed ? .tertiary : .primary)
                     .lineLimit(2)
                 if let status {
                     Text(status)
@@ -240,5 +248,28 @@ struct EpisodeActionButton: View {
             }
             .accessibilityLabel(playing ? "Pause" : "Play")
         }
+    }
+}
+
+/// Marks episodes played or unplayed, resetting their position and, when marking played with
+/// auto-delete on, removing their downloads.
+@MainActor
+enum EpisodePlayedState {
+    static func set(
+        _ played: Bool,
+        on episodes: some Sequence<Episode>,
+        player: PlayerController,
+        downloads: DownloadManager,
+        context: ModelContext
+    ) {
+        for episode in episodes where episode.isPlayed != played {
+            if played && AppSettings.autoDeletePlayed {
+                if player.isCurrent(episode) { player.stop() }
+                downloads.deleteDownload(episode)
+            }
+            episode.isPlayed = played
+            episode.playbackPosition = 0
+        }
+        try? context.save()
     }
 }

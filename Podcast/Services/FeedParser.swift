@@ -70,7 +70,7 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
                 item?.audioURL = url
             }
         case "itunes:image":
-            if let href = attributes["href"] {
+            if let href = Self.normalizedImageURL(attributes["href"]) {
                 if item != nil { item?.imageURL = href } else { feed.artworkURL = href }
             }
         default:
@@ -115,7 +115,7 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
         }
 
         if inChannelImage {
-            if name == "url" { channelImageURL = value }
+            if name == "url" { channelImageURL = Self.normalizedImageURL(value) }
             if name == "image" { inChannelImage = false }
             return
         }
@@ -131,6 +131,19 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
     }
 
     // MARK: - Helpers
+
+    /// Trims, drops empty values, percent-encodes stray spaces, and upgrades http to https
+    /// (App Transport Security blocks plain http, and most image hosts serve both).
+    static func normalizedImageURL(_ value: String?) -> String? {
+        guard var string = value?.trimmingCharacters(in: .whitespacesAndNewlines), !string.isEmpty else {
+            return nil
+        }
+        string = string.replacingOccurrences(of: " ", with: "%20")
+        if string.lowercased().hasPrefix("http://") {
+            string = "https://" + string.dropFirst("http://".count)
+        }
+        return URL(string: string) == nil ? nil : string
+    }
 
     private static let dateFormatters: [DateFormatter] = [
         "EEE, dd MMM yyyy HH:mm:ss Z",

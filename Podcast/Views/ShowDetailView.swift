@@ -6,6 +6,7 @@ struct ShowDetailView: View {
     @Environment(FeedService.self) private var feeds
     @Environment(\.modelContext) private var context
     @Environment(PlayerController.self) private var player
+    @Environment(DownloadManager.self) private var downloads
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingUnsubscribe = false
 
@@ -17,7 +18,7 @@ struct ShowDetailView: View {
             Section {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(spacing: 6) {
-                        ArtworkView(urlString: show.artworkURL, size: 110, cornerRadius: 12)
+                        ArtworkView(urlStrings: show.artworkCandidates, size: 110, cornerRadius: 12)
                         if show.isExplicit { ExplicitBadge() }
                     }
                     VStack(alignment: .leading, spacing: 4) {
@@ -52,13 +53,26 @@ struct ShowDetailView: View {
                 }
             }
 
-            Section("Episodes") {
+            Section {
                 ShowEpisodeRows(episodes: Array(episodes.prefix(Self.recentCount)))
                 if episodes.count > Self.recentCount {
                     NavigationLink {
                         OlderEpisodesView(title: show.title, episodes: Array(episodes.dropFirst(Self.recentCount)))
                     } label: {
                         Label("Older Episodes (\(episodes.count - Self.recentCount))", systemImage: "clock.arrow.circlepath")
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("Episodes")
+                    Spacer()
+                    if !episodes.isEmpty {
+                        let markAsPlayed = !show.isFullyPlayed
+                        Button(markAsPlayed ? "Mark All as Played" : "Mark All as Unplayed") {
+                            EpisodePlayedState.set(markAsPlayed, on: show.episodes, player: player, downloads: downloads, context: context)
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .textCase(nil)
                     }
                 }
             }
@@ -96,21 +110,29 @@ private struct OlderEpisodesView: View {
     }
 }
 
-/// Show-page episode rows: tapping plays (or offers stream/download), swiping deletes a download.
+/// Show-page episode rows: tapping plays (or offers stream/download), swiping deletes a download
+/// or, for an episode that isn't downloaded, marks it played.
 private struct ShowEpisodeRows: View {
     let episodes: [Episode]
     @Environment(DownloadManager.self) private var downloads
     @Environment(PlayerController.self) private var player
+    @Environment(\.modelContext) private var context
 
     var body: some View {
         ForEach(episodes) { episode in
-            EpisodeRow(episode: episode, showArtwork: false, playsOnSelection: true)
+            EpisodeRow(episode: episode, showArtwork: false, playsOnSelection: true, showsDownloadedBadge: true)
                 .swipeActions(edge: .trailing) {
                     if episode.downloadState == .downloaded || episode.downloadState == .failed {
                         Button("Delete", systemImage: "trash", role: .destructive) {
                             if player.isCurrent(episode) { player.stop() }
                             downloads.deleteDownload(episode)
                         }
+                    } else if episode.downloadState == .notDownloaded {
+                        Button(episode.isPlayed ? "Unplayed" : "Played",
+                               systemImage: episode.isPlayed ? "circle" : "checkmark.circle") {
+                            EpisodePlayedState.set(!episode.isPlayed, on: [episode], player: player, downloads: downloads, context: context)
+                        }
+                        .tint(.accentColor)
                     }
                 }
         }

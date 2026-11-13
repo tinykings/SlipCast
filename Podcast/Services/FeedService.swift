@@ -50,6 +50,7 @@ final class FeedService {
             language: parsed.language,
             autoDownload: AppSettings.autoDownloadNew
         )
+        show.directoryArtworkURL = fallbackArtwork
         show.isExplicit = parsed.isExplicit ?? false
         show.filteringEnabled = show.isExplicit && DeviceSupport.transcriptionAvailable
         context.insert(show)

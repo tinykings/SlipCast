@@ -1,29 +1,52 @@
 import SwiftUI
 
 struct ArtworkView: View {
-    let urlString: String?
+    /// Tried in order; the next one loads if the previous is missing or fails.
+    let urlStrings: [String]
     var size: CGFloat = 56
     var cornerRadius: CGFloat = 8
 
+    init(urlString: String?, size: CGFloat = 56, cornerRadius: CGFloat = 8) {
+        self.init(urlStrings: [urlString], size: size, cornerRadius: cornerRadius)
+    }
+
+    init(urlStrings: [String?], size: CGFloat = 56, cornerRadius: CGFloat = 8) {
+        var seen = Set<String>()
+        self.urlStrings = urlStrings.compactMap { $0 }.filter { !$0.isEmpty && seen.insert($0).inserted }
+        self.size = size
+        self.cornerRadius = cornerRadius
+    }
+
     var body: some View {
-        AsyncImage(url: urlString.flatMap(URL.init(string:))) { phase in
-            if let image = phase.image {
-                image.resizable().scaledToFill()
-            } else {
-                ZStack {
-                    LinearGradient(
-                        colors: [.brandGradientStart, .brandGradientEnd],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Image(systemName: "waveform")
-                        .font(.system(size: size * 0.4, weight: .semibold))
-                        .foregroundStyle(Color.brandGlyph)
+        artwork(from: urlStrings[...])
+            .frame(width: size, height: size)
+            .clipShape(.rect(cornerRadius: cornerRadius))
+    }
+
+    private func artwork(from candidates: ArraySlice<String>) -> AnyView {
+        guard let first = candidates.first else { return AnyView(placeholder) }
+        return AnyView(
+            AsyncImage(url: URL(string: first)) { phase in
+                switch phase {
+                case .success(let image): image.resizable().scaledToFill()
+                case .failure: artwork(from: candidates.dropFirst())
+                default: placeholder
                 }
             }
+        )
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            LinearGradient(
+                colors: [.brandGradientStart, .brandGradientEnd],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Image(systemName: "waveform")
+                .font(.system(size: size * 0.4, weight: .semibold))
+                .foregroundStyle(Color.brandGlyph)
         }
-        .frame(width: size, height: size)
-        .clipShape(.rect(cornerRadius: cornerRadius))
     }
 }
 
@@ -84,6 +107,25 @@ extension String {
             .replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Like `strippingHTML`, but keeps line and paragraph breaks for reading in full.
+    var htmlAsPlainText: String {
+        let regexCaseless: String.CompareOptions = [.regularExpression, .caseInsensitive]
+        return replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: regexCaseless)
+            .replacingOccurrences(of: "</(p|div|h[1-6]|ul|ol)>", with: "\n\n", options: regexCaseless)
+            .replacingOccurrences(of: "<li[^>]*>", with: "\n• ", options: regexCaseless)
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "[ \\t]*\\n[ \\t]*", with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

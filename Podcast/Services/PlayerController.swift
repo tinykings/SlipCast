@@ -685,15 +685,19 @@ final class PlayerController {
     }
 
     private func loadArtwork(for episode: Episode) {
-        guard let string = episode.artworkURL, let url = URL(string: string) else { return }
+        let urls = episode.artworkCandidates.compactMap { $0.flatMap(URL.init(string:)) }
+        guard !urls.isEmpty else { return }
         let id = episode.episodeID
         Task {
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
-                  let image = UIImage(data: data),
-                  self.episode?.episodeID == id
-            else { return }
-            artwork = Self.makeArtwork(image)
-            updateNowPlaying()
+            for url in urls {
+                guard let (data, _) = try? await URLSession.shared.data(from: url),
+                      let image = UIImage(data: data)
+                else { continue }
+                guard self.episode?.episodeID == id else { return }
+                artwork = Self.makeArtwork(image)
+                updateNowPlaying()
+                return
+            }
         }
     }
 

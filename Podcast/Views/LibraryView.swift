@@ -75,7 +75,19 @@ private struct ShowTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ArtworkView(urlString: show.artworkURL, size: 150, cornerRadius: 12)
+            ArtworkView(urlStrings: show.artworkCandidates, size: 150, cornerRadius: 12)
+                .grayscale(show.isFullyPlayed ? 0.9 : 0)
+                .opacity(show.isFullyPlayed ? 0.5 : 1)
+                .overlay {
+                    if show.isFullyPlayed {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 44, weight: .semibold))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .black.opacity(0.55))
+                            .shadow(radius: 4)
+                            .accessibilityLabel("All episodes played")
+                    }
+                }
                 .padding(.bottom, 2)
             Group {
                 if show.isExplicit {
@@ -86,7 +98,7 @@ private struct ShowTile: View {
             }
             .font(.subheadline.weight(.medium))
             .lineLimit(2)
-            .foregroundStyle(.primary)
+            .foregroundStyle(show.isFullyPlayed ? .secondary : .primary)
             .accessibilityLabel(show.isExplicit ? "\(show.title), explicit" : show.title)
             if let date = show.newestEpisodeDate {
                 Text(date, format: .dateTime.month(.abbreviated).day().year())

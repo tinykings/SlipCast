@@ -9,6 +9,9 @@ final class Show {
     var author: String
     var summary: String
     var artworkURL: String?
+    /// Artwork from the directory listing the show was added from. Used when the feed's own
+    /// artwork won't load (e.g. a plain-http URL, which App Transport Security blocks).
+    var directoryArtworkURL: String?
     var language: String?
     var filteringEnabled: Bool = false
     /// The feed's show-level `itunes:explicit` tag. Filtering starts on for these.
@@ -44,6 +47,13 @@ final class Show {
     var newestEpisodeDate: Date? {
         latestEpisodeDate ?? episodes.compactMap(\.pubDate).max()
     }
+
+    var isFullyPlayed: Bool {
+        !episodes.isEmpty && episodes.allSatisfy(\.isPlayed)
+    }
+
+    /// Artwork URLs to try, best first.
+    var artworkCandidates: [String?] { [artworkURL, directoryArtworkURL] }
 
     var sortedEpisodes: [Episode] {
         episodes.sorted { ($0.pubDate ?? .distantPast) > ($1.pubDate ?? .distantPast) }
