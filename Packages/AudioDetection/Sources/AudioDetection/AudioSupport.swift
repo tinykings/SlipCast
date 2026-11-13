@@ -37,14 +37,10 @@ public enum EpisodeAudioScanError: LocalizedError {
 }
 
 package enum AudioSamples {
-    /// Xcode's flat iOS bundle and SwiftPM's Contents/Resources Mac bundle differ, so look for
-    /// `marker` in each candidate resources folder.
-    package static func resources(in bundle: Bundle, containing marker: String) -> URL {
-        let candidates = [bundle.bundleURL.appendingPathComponent("Resources")]
-            + [bundle.resourceURL, bundle.resourceURL?.appendingPathComponent("Resources")].compactMap { $0 }
-        return candidates.first {
-            FileManager.default.fileExists(atPath: $0.appendingPathComponent(marker).path)
-        } ?? candidates[0]
+    /// The `.copy("Models")` folder. resourceURL is the bundle root on iOS and Contents/Resources on macOS.
+    /// The folder can't be named "Resources": codesign rejects an iOS bundle with a top-level Resources folder.
+    package static func models(in bundle: Bundle) -> URL {
+        (bundle.resourceURL ?? bundle.bundleURL).appendingPathComponent("Models")
     }
 
     package static func read(_ url: URL, start: Double, duration: Double) throws -> (samples: [Float], rate: Double) {

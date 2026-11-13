@@ -75,9 +75,8 @@ final class FastOverlapTests: XCTestCase {
     func testBundledModelFindsSyntheticOverlappingVoicesAndReusesCompletedCache() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let candidates = [Bundle.module.resourceURL?.appendingPathComponent("Resources/OverlappingVoices.wav"),
-                          Bundle.module.bundleURL.appendingPathComponent("Resources/OverlappingVoices.wav")].compactMap { $0 }
-        let file = try XCTUnwrap(candidates.first { FileManager.default.fileExists(atPath: $0.path) })
+        let file = try XCTUnwrap(Bundle.module.resourceURL?.appendingPathComponent("Fixtures/OverlappingVoices.wav"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
         let store = OverlapScanStore(directory: root)
         let progress = Mutex<[Double]>([])
         let scan = try await OverlapDetector.shared.scan(fileURL: file, episodeID: "control", store: store,

@@ -45,7 +45,7 @@ public actor OverlapDetector {
     }
 
     static var modelURL: URL {
-        AudioSamples.resources(in: .module, containing: "VoiceOverlap.onnx").appendingPathComponent("VoiceOverlap.onnx")
+        AudioSamples.models(in: .module).appendingPathComponent("VoiceOverlap.onnx")
     }
 
     /// Window edges are unreliable, so each window only reports frames inside `keep` (its middle

@@ -3,7 +3,7 @@ sys.path.insert(0,'/Users/ryan/dev/Podcast/Tools/keyword_detection')
 import numpy as np,torch,torchaudio,sherpa_onnx
 from probe import read_excerpt,resample,detect
 root=pathlib.Path('/tmp/slipcast-overlap')
-resources=pathlib.Path('/Users/ryan/dev/Podcast/Packages/AudioDetection/Sources/AudioDetection/Resources')
+resources=pathlib.Path('/Users/ryan/dev/Podcast/Packages/AudioDetection/Sources/AudioDetection/Models')
 torch.set_num_threads(4);torch.hub.set_dir(str(root/'conv-tasnet'))
 model=torchaudio.pipelines.CONVTASNET_BASE_LIBRI2MIX.get_model().eval()
 kw=root/'small-separator-keywords.txt';kw.write_text('▁F U CK @target\n')

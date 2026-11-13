@@ -44,7 +44,7 @@ class Separator(torch.nn.Module):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache", type=Path, default=Path.home() / "Library/Caches/SlipCastModelExport")
-    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[2] / "Packages/AudioDetection/Sources/AudioDetection/Resources")
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[2] / "Packages/AudioDetection/Sources/AudioDetection/Models")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     model_path = ensure_model(args.cache.resolve(), download=True)

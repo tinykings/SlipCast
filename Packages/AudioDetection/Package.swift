@@ -21,20 +21,20 @@ let package = Package(
         ], linkerSettings: [.linkedLibrary("c++"), .linkedFramework("Foundation"), .linkedFramework("CoreML")]),
         .binaryTarget(name: "WhisperNative", path: "Vendor/WhisperNative.xcframework"),
         .target(name: "WhisperTranscription", dependencies: ["WhisperNative"],
-                resources: [.copy("Resources")],
+                resources: [.copy("Models")],
                 linkerSettings: [.linkedLibrary("c++"), .linkedFramework("Accelerate")]),
         .executableTarget(name: "WhisperProbe", dependencies: ["WhisperTranscription"]),
-        .target(name: "AudioDetection", dependencies: ["OverlapRuntime"], resources: [.copy("Resources")]),
+        .target(name: "AudioDetection", dependencies: ["OverlapRuntime"], resources: [.copy("Models")]),
         // Slow separation + keyword spotting (~105 MB of models). Probe and tests only; not in the app.
         .target(
             name: "WordDetection",
             dependencies: ["AudioDetection", .product(name: "sherpa-onnx", package: "sherpa-onnx")],
-            resources: [.copy("Resources")]
+            resources: [.copy("Models")]
         ),
         .executableTarget(name: "DetectionProbe", dependencies: ["AudioDetection", "WordDetection"]),
         .testTarget(name: "AudioDetectionTests", dependencies: ["AudioDetection", "WordDetection"],
-                    resources: [.copy("Resources")]),
+                    resources: [.copy("Fixtures")]),
         .testTarget(name: "WhisperTranscriptionTests", dependencies: ["WhisperTranscription"],
-                    resources: [.copy("Resources")]),
+                    resources: [.copy("Fixtures")]),
     ]
 )
