@@ -1,5 +1,6 @@
 import AVFoundation
 import AudioDetection
+import KeywordSpotting
 import MediaPlayer
 import Observation
 import SwiftData
@@ -59,6 +60,9 @@ final class PlayerController {
     @ObservationIgnored private let timeline = MuteTimeline()
     @ObservationIgnored private var words: [TranscriptWord] = []
     @ObservationIgnored private var automaticAudioScan: OverlapScan?
+    /// Muted words heard in the crosstalk clips of `automaticAudioScan`.
+    @ObservationIgnored private var crosstalkCheck: OverlapKeywordCheck?
+    @ObservationIgnored private var crosstalkTask: Task<Void, Never>?
     @ObservationIgnored private var muteRefreshPending = false
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: NSObjectProtocol?
@@ -257,6 +261,7 @@ final class PlayerController {
         scannedThrough = 0
         mutedRanges = []
         automaticAudioScan = nil
+        resetCrosstalkCheck()
         transcriptLines = []
         timeline.update(MuteSnapshot())
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -277,6 +282,7 @@ final class PlayerController {
 
     private func loadScanState(for episode: Episode) {
         automaticAudioScan = nil
+        resetCrosstalkCheck()
         guard episode.requiresFiltering else {
             words = []
             scannedThrough = .infinity
@@ -299,6 +305,44 @@ final class PlayerController {
         // The queue emits its final callback before clearing live state.
         if episode.processingState == .ready, automaticAudioScan?.isComplete == true {
             scannedThrough = .infinity
+        }
+        if let scan = automaticAudioScan, scan.isComplete, let url = episode.localFileURL {
+            crosstalkCheck = CrosstalkFilter.savedCheck(fileURL: url, episodeID: episode.episodeID, scan: scan)
+        }
+    }
+
+    private func resetCrosstalkCheck() {
+        crosstalkTask?.cancel()
+        crosstalkTask = nil
+        crosstalkCheck = nil
+    }
+
+    /// Mute ranges for muted words heard in crosstalk. Until the clips have been checked for
+    /// every current word (a few seconds), the clips themselves are skipped so nothing slips by.
+    private func crosstalkRanges(terms: [MutedTerm], padding: Double) -> [ClosedRange<Double>] {
+        guard let scan = automaticAudioScan, !terms.isEmpty else { return [] }
+        let keywords = CrosstalkFilter.keywords(for: terms.map(\.text))
+        if keywords.isEmpty { return [] }
+        if let crosstalkCheck, crosstalkCheck.covers(keywords) {
+            return crosstalkCheck.hits(for: keywords).map { CrosstalkFilter.muteRange(for: $0, padding: padding) }
+        }
+        startCrosstalkCheck(scan: scan, keywords: keywords)
+        return scan.skipRanges(padding: padding)
+    }
+
+    private func startCrosstalkCheck(scan: OverlapScan, keywords: Set<String>) {
+        // While processing, the queue checks once the scan is complete; playback waits for it.
+        guard crosstalkTask == nil, scan.isComplete, let episode, episode.downloadState == .downloaded,
+              let url = episode.localFileURL else { return }
+        let id = episode.episodeID
+        crosstalkTask = Task {
+            let check = try? await CrosstalkFilter.check(fileURL: url, episodeID: id, scan: scan, keywords: keywords)
+            // stop() and loading another episode cancel this task, so the episode is still current.
+            guard !Task.isCancelled else { return }
+            crosstalkTask = nil
+            if let check { crosstalkCheck = check }
+            // On failure the clips stay skipped; a later mute-list change or reload retries.
+            if check != nil { applyMuting() }
         }
     }
 
@@ -362,7 +406,7 @@ final class PlayerController {
         if let episode, episode.downloadState == .downloaded, let fileURL = episode.localFileURL {
             reviewedRanges = (try? ReviewedMuteStore().ranges(episodeID: episode.episodeID, fileURL: fileURL)) ?? []
         } else { reviewedRanges = [] }
-        let automaticRanges = automaticAudioScan?.skipRanges(padding: padding) ?? []
+        let automaticRanges = crosstalkRanges(terms: terms, padding: padding)
         let ranges = MuteMatcher.merge(transcriptRanges + automaticRanges + reviewedRanges, joiningGapsUnder: 0.08)
         mutedRanges = ranges
         filteredSkipRanges = ranges

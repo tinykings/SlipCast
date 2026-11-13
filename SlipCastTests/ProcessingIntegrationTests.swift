@@ -1,4 +1,5 @@
 import AudioDetection
+import KeywordSpotting
 import AVFoundation
 import SwiftData
 import XCTest
@@ -43,7 +44,7 @@ final class ProcessingIntegrationTests: XCTestCase {
         downloads.deleteDownload(episode)
     }
 
-    func testAutomaticMutesReachPlayerWithoutTranscriptWordsOrManualApply() async throws {
+    func testCrosstalkIsCheckedForMutedWordsInsteadOfSkipped() async throws {
         let (container, episode, processing, downloads) = try fixture(source: try XCTUnwrap(Bundle(for: Self.self).url(forResource: "OverlappingVoices", withExtension: "wav")))
         defer { clean(episode, downloads); withExtendedLifetime(container) {} }
         let context = container.mainContext
@@ -65,11 +66,52 @@ final class ProcessingIntegrationTests: XCTestCase {
         XCTAssertTrue(player.isFullyScanned)
         let skips = scan.skipRanges(padding: 0)
         XCTAssertFalse(skips.isEmpty)
+        // Processing listened to the crosstalk for the muted word; only what it heard is muted.
+        let check = try XCTUnwrap(OverlapKeywordStore().load(episodeID: episode.episodeID, fileURL: file, clips: skips))
+        XCTAssertTrue(check.covers(["funny"]))
+        let heard = check.hits.map { CrosstalkFilter.muteRange(for: $0, padding: AppSettings.padding) }
+        for range in heard { XCTAssertTrue(player.mutedRanges.contains { $0.contains(range.lowerBound) }) }
         for skip in skips {
-            XCTAssertTrue(player.mutedRanges.contains { $0.contains(skip.lowerBound) })
+            let middle = (skip.lowerBound + skip.upperBound) / 2
+            guard !heard.contains(where: { $0.overlaps(skip) }), !(11.5...13).contains(middle) else { continue }
+            XCTAssertFalse(player.mutedRanges.contains { $0.contains(middle) }, "Crosstalk without a muted word plays")
         }
         XCTAssertTrue(player.mutedRanges.contains { $0.contains(12.25) }, "Manual mutes must be retained")
         XCTAssertTrue(player.transcriptLines.isEmpty)
+    }
+
+    func testAddedWordSkipsCrosstalkOnlyUntilItHasBeenChecked() async throws {
+        let (container, episode, processing, downloads) = try fixture(source: try XCTUnwrap(Bundle(for: Self.self).url(forResource: "OverlappingVoices", withExtension: "wav")))
+        defer { clean(episode, downloads); withExtendedLifetime(container) {} }
+        processing.resetInterrupted()
+        await processing.start().value
+        XCTAssertEqual(episode.processingState, .ready, episode.processingError ?? "")
+        let file = try XCTUnwrap(episode.localFileURL)
+        let skips = try XCTUnwrap(OverlapScanStore().load(episodeID: episode.episodeID, fileURL: file)).skipRanges(padding: 0)
+        XCTAssertFalse(skips.isEmpty)
+        let player = PlayerController(context: container.mainContext, processing: processing, downloads: downloads)
+        await player.play(episode)
+        defer { player.stop() }
+        player.pause()
+
+        container.mainContext.insert(MutedTerm(text: "zebra"))
+        try container.mainContext.save()
+        player.refreshMuting()
+        let middle = (skips[0].lowerBound + skips[0].upperBound) / 2
+        XCTAssertTrue(player.mutedRanges.contains { $0.contains(middle) }, "Unchecked word: crosstalk is skipped meanwhile")
+
+        var checked: OverlapKeywordCheck?
+        for _ in 0..<100 {
+            checked = OverlapKeywordStore().load(episodeID: episode.episodeID, fileURL: file, clips: skips)
+            if checked?.covers(["zebra"]) == true { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let check = try XCTUnwrap(checked)
+        XCTAssertTrue(check.covers(["funny", "zebra"]), "Only the new word needed checking")
+        try await Task.sleep(for: .milliseconds(100))
+        if check.hits.isEmpty {
+            XCTAssertFalse(player.mutedRanges.contains { $0.contains(middle) }, "Checked crosstalk plays again")
+        }
     }
 
     func testChangedWordsReuseOverlapScanAndApplyTranscriptFilterImmediately() async throws {

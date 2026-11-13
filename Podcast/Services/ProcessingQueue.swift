@@ -43,6 +43,10 @@ final class ProcessingQueue {
         self.context = context
     }
 
+    private func mutedTermTexts() -> [String] {
+        ((try? context.fetch(FetchDescriptor<MutedTerm>())) ?? []).map(\.text)
+    }
+
     private func hasCurrentAudioScan(_ episode: Episode) -> Bool {
         guard let url = episode.localFileURL else { return false }
         return (try? OverlapScanStore().load(episodeID: episode.episodeID, fileURL: url))?.isComplete == true
@@ -130,6 +134,7 @@ final class ProcessingQueue {
             guard episode.downloadState == .downloaded, episode.requiresFiltering else { continue }
             TranscriptStore.delete(episodeID: episode.episodeID)
             try? OverlapScanStore().remove(episodeID: episode.episodeID)
+            CrosstalkFilter.remove(episodeID: episode.episodeID)
             episode.processingState = .pending
             episode.processingError = nil
         }
@@ -291,9 +296,15 @@ final class ProcessingQueue {
             // Keep the completed transcript when iOS interrupts the slower acoustic pass.
             try TranscriptStore.save(words, episodeID: id, engine: engine)
             continuation.yield(.transcriptReady(words))
-            _ = try await OverlapDetector.shared.scan(fileURL: fileURL, episodeID: id,
+            let scan = try await OverlapDetector.shared.scan(fileURL: fileURL, episodeID: id,
                 onActivity: { continuation.yield(.activity($0)) },
                 onUpdate: { continuation.yield(.audio($0)) })
+            // Usually a few seconds. The player redoes this if the mute list changes later.
+            let keywords = CrosstalkFilter.keywords(for: mutedTermTexts())
+            if !keywords.isEmpty {
+                continuation.yield(.activity(.init(fraction: 1, message: "Listening for muted words in crosstalk…")))
+                _ = try await CrosstalkFilter.check(fileURL: fileURL, episodeID: id, scan: scan, keywords: keywords)
+            }
             return words
         }
         transcription = task
@@ -313,6 +324,7 @@ final class ProcessingQueue {
             if let current = context.episode(withID: id) {
                 if current.downloadState != .downloaded {
                     try? OverlapScanStore().remove(episodeID: id)
+                    CrosstalkFilter.remove(episodeID: id)
                     current.processingState = .none
                 } else if !current.requiresFiltering {
                     // Keep reusable progress when filtering is switched off; it is never applied
@@ -329,6 +341,7 @@ final class ProcessingQueue {
                 // Never touch that invalidated instance or leave its scan files behind.
                 TranscriptStore.delete(episodeID: id)
                 try? OverlapScanStore().remove(episodeID: id)
+                CrosstalkFilter.remove(episodeID: id)
             }
         }
 
@@ -337,6 +350,7 @@ final class ProcessingQueue {
         if resetAfterCancellation.remove(id) != nil {
             TranscriptStore.delete(episodeID: id)
             try? OverlapScanStore().remove(episodeID: id)
+            CrosstalkFilter.remove(episodeID: id)
         }
 
         transcription = nil

@@ -11,6 +11,7 @@ final class AppEnvironment {
     let downloads: DownloadManager
     let feeds: FeedService
     let player: PlayerController
+    let cloudSync: CloudSync
 
     private init() {
         AppSettings.registerDefaults()
@@ -25,6 +26,8 @@ final class AppEnvironment {
         downloads = DownloadManager(context: context, processing: processing)
         feeds = FeedService(context: context, downloads: downloads)
         player = PlayerController(context: context, processing: processing, downloads: downloads)
+        cloudSync = CloudSync(context: context, feeds: feeds, player: player)
+        cloudSync.start()
 
         processing.resetInterrupted()
         Task {

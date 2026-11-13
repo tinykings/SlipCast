@@ -64,6 +64,30 @@ final class FeedService {
         return show
     }
 
+    /// Resubscribes to a show from iCloud with its synced settings. Nothing is downloaded
+    /// straight away, and the original subscribe date keeps refreshes off the back catalog.
+    func restore(feedURL: String, _ synced: SyncedShow) async throws {
+        guard context.show(withFeedURL: feedURL) == nil else { return }
+        let parsed = try await Self.fetchFeed(feedURL)
+        guard context.show(withFeedURL: feedURL) == nil else { return }
+        let show = Show(
+            feedURL: feedURL,
+            title: parsed.title,
+            author: parsed.author,
+            summary: parsed.summary,
+            artworkURL: parsed.artworkURL ?? synced.directoryArtwork,
+            language: parsed.language,
+            autoDownload: synced.autoDownload
+        )
+        show.directoryArtworkURL = synced.directoryArtwork
+        show.isExplicit = parsed.isExplicit ?? false
+        show.filteringEnabled = synced.filtering
+        show.subscribedAt = Date(timeIntervalSince1970: Double(synced.subscribedAt))
+        context.insert(show)
+        apply(parsed, to: show)
+        try context.save()
+    }
+
     func unsubscribe(_ show: Show) {
         for episode in show.episodes where episode.downloadState != .notDownloaded {
             downloads.deleteDownload(episode)

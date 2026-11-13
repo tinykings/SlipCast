@@ -22,6 +22,7 @@ struct SlipCastApp: App {
             switch phase {
             case .active:
                 env.processing.start()
+                env.cloudSync.refresh()
                 Task { await env.feeds.refreshIfStale() }
             case .background:
                 BackgroundWork.scheduleRefresh()

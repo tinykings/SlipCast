@@ -59,7 +59,7 @@ struct SettingsView: View {
             } header: {
                 Text("Muting")
             } footer: {
-                Text("Extra silence before and after each muted word. Increase this if you can still hear the edges of words.")
+                Text("Extra audio skipped before and after each muted word. Increase this if you can still hear the edges of words.")
             }
 
             Section {
@@ -84,7 +84,7 @@ struct SettingsView: View {
             } header: {
                 Text("On-device Transcription")
             } footer: {
-                Text("Turn on Filter muted words for each show you want filtered. Those episodes must finish downloading and processing before they play. Muted words are silenced, and passages where people talk over each other are skipped. Unfiltered shows play the original audio.")
+                Text("Turn on Filter muted words for each show you want filtered. Those episodes must finish downloading and processing before they play. Muted words are skipped, with no silence left behind. Where people talk over each other, SlipCast also listens for your muted words and skips just those spots (English only). Unfiltered shows play the original audio.")
             }
         }
         .tabTitle("Settings")

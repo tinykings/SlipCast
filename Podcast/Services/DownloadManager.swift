@@ -121,6 +121,7 @@ final class DownloadManager: NSObject {
         TranscriptStore.delete(episodeID: episode.episodeID)
         try? ReviewedMuteStore().remove(episodeID: episode.episodeID)
         try? OverlapScanStore().remove(episodeID: episode.episodeID)
+        CrosstalkFilter.remove(episodeID: episode.episodeID)
         episode.fileName = nil
         episode.downloadedAt = nil
         episode.downloadState = .notDownloaded
