@@ -7,16 +7,17 @@ struct EpisodeRow: View {
     var playsOnSelection = false
     var showsRemainingTime = false
     var showsDownloadedBadge = false
+    /// Puts the show's name above the episode, for lists that mix shows.
+    var showsShowTitle = false
 
     @Environment(\.modelContext) private var context
     @Environment(DownloadManager.self) private var downloads
     @Environment(ProcessingQueue.self) private var processing
     @Environment(PlayerController.self) private var player
-    @State private var choosingStreamOrDownload = false
 
-    /// Filtered and still downloading or processing: tapping toggles playing it once it's ready.
+    /// Still downloading (or, when filtered, processing): tapping toggles playing it once it's ready.
     private var offersPlayWhenReady: Bool {
-        guard episode.requiresFiltering, !PlayerController.canPlay(episode) else { return false }
+        guard !PlayerController.canPlay(episode) else { return false }
         switch episode.downloadState {
         case .queued, .downloading: return true
         case .downloaded: return [.none, .pending, .processing].contains(episode.processingState)
@@ -26,18 +27,32 @@ struct EpisodeRow: View {
 
     private var isWaitingToPlay: Bool { player.playWhenReadyID == episode.episodeID }
 
-    /// Filtering off and not on the device yet: tapping asks whether to stream or download.
-    private var offersStreamOrDownload: Bool {
-        !episode.requiresFiltering && (episode.downloadState == .notDownloaded || episode.downloadState == .failed)
+    /// Started listening but not finished (or playing now).
+    private var isListeningInProgress: Bool {
+        guard !episode.isPlayed else { return false }
+        return player.isCurrent(episode) || episode.playbackPosition > 0
+    }
+
+    /// Tint while waiting to play, and an accent border around episodes part-way through.
+    private var rowBackground: AnyView? {
+        guard isWaitingToPlay || isListeningInProgress else { return nil }
+        let fill = isWaitingToPlay ? Color.accentColor.opacity(0.18) : Color(.secondarySystemGroupedBackground)
+        return AnyView(
+            fill.overlay {
+                if isListeningInProgress {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.accentColor, lineWidth: 2)
+                        .padding(2)
+                }
+            }
+        )
     }
 
     var body: some View {
         HStack(spacing: 12) {
             if playsOnSelection {
                 Button {
-                    if offersStreamOrDownload {
-                        choosingStreamOrDownload = true
-                    } else if PlayerController.canPlay(episode) {
+                    if PlayerController.canPlay(episode) {
                         Task { await player.play(episode) }
                     } else if offersPlayWhenReady {
                         player.togglePlayWhenReady(episode)
@@ -51,22 +66,18 @@ struct EpisodeRow: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint(offersStreamOrDownload ? "Choose to stream or download"
-                    : PlayerController.canPlay(episode) ? "Plays this episode"
+                .accessibilityHint(PlayerController.canPlay(episode) ? "Plays this episode"
                     : isWaitingToPlay ? "Stops waiting to play this episode"
                     : offersPlayWhenReady ? "Plays this episode automatically when it's ready"
-                    : "Downloads and processes this episode before playback")
-                .confirmationDialog(episode.title, isPresented: $choosingStreamOrDownload, titleVisibility: .visible) {
-                    Button("Stream", systemImage: "play.fill") { Task { await player.play(episode) } }
-                    Button("Download", systemImage: "arrow.down.circle") { downloads.download(episode, userInitiated: true) }
-                }
+                    : episode.requiresFiltering ? "Downloads and processes this episode before playback"
+                    : "Downloads this episode")
             } else {
                 episodeContent
             }
             EpisodeActionButton(episode: episode)
         }
         .padding(.vertical, 2)
-        .listRowBackground(isWaitingToPlay ? Color.accentColor.opacity(0.18) : nil)
+        .listRowBackground(rowBackground)
         .contextMenu {
             if episode.downloadState == .downloaded || episode.downloadState == .failed {
                 Button("Remove Download", systemImage: "trash", role: .destructive) {
@@ -98,6 +109,12 @@ struct EpisodeRow: View {
                     .opacity(episode.isPlayed ? 0.5 : 1)
             }
             VStack(alignment: .leading, spacing: 3) {
+                if showsShowTitle, let showTitle = episode.show?.title, !showTitle.isEmpty {
+                    Text(showTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(episode.isPlayed ? .tertiary : .secondary)
+                        .lineLimit(1)
+                }
                 HStack(spacing: 4) {
                     if showsDownloadedBadge && episode.downloadState == .downloaded {
                         Image(systemName: "arrow.down.circle.fill")
@@ -198,8 +215,6 @@ struct EpisodeActionButton: View {
     @ViewBuilder
     private var downloadControl: some View {
         switch episode.downloadState {
-        case .notDownloaded where !episode.requiresFiltering:
-            EmptyView() // play streams it; tapping the row offers a download
         case .notDownloaded, .failed:
             Button {
                 downloads.download(episode, userInitiated: true)
@@ -224,8 +239,8 @@ struct EpisodeActionButton: View {
 
     @ViewBuilder
     private var playControl: some View {
-        if episode.requiresFiltering && episode.downloadState != .downloaded {
-            EmptyView() // the download control is the only action for an unprepared filtered episode
+        if episode.downloadState != .downloaded {
+            EmptyView() // the download control is the only action until the episode is on the device
         } else if episode.requiresFiltering && (episode.processingState == .pending || episode.processingState == .processing || episode.processingState == .none) {
             ProgressView().accessibilityLabel("Preparing filtered download")
         } else if episode.requiresFiltering && episode.processingState == .failed {
@@ -237,7 +252,6 @@ struct EpisodeActionButton: View {
             .tint(.red)
             .accessibilityLabel("Retry scanning")
         } else {
-            // Unfiltered shows can stream; filtered shows reach this control only after processing.
             let playing = player.isCurrent(episode) && player.isPlaying
             Button {
                 player.toggle(episode)

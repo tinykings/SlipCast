@@ -94,7 +94,7 @@ struct DownloadsView: View {
     }
 
     private func row(_ episode: Episode) -> some View {
-        EpisodeRow(episode: episode, playsOnSelection: true, showsRemainingTime: true)
+        EpisodeRow(episode: episode, playsOnSelection: true, showsRemainingTime: true, showsShowTitle: true)
             .swipeActions {
                 Button("Delete", systemImage: "trash", role: .destructive) {
                     if player.isCurrent(episode) { player.stop() }

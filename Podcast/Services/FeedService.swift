@@ -35,7 +35,12 @@ final class FeedService {
     }
 
     @discardableResult
-    func subscribe(feedURL: String, feed: ParsedFeed? = nil, fallbackArtwork: String? = nil) async throws -> Show {
+    func subscribe(
+        feedURL: String,
+        feed: ParsedFeed? = nil,
+        fallbackArtwork: String? = nil,
+        directoryID: Int? = nil
+    ) async throws -> Show {
         if let existing = context.show(withFeedURL: feedURL) { return existing }
 
         let parsed: ParsedFeed
@@ -51,11 +56,13 @@ final class FeedService {
             autoDownload: AppSettings.autoDownloadNew
         )
         show.directoryArtworkURL = fallbackArtwork
+        show.directoryID = directoryID
         show.isExplicit = parsed.isExplicit ?? false
         show.filteringEnabled = show.isExplicit && DeviceSupport.transcriptionAvailable
         context.insert(show)
         apply(parsed, to: show)
         try? context.save()
+        Task { await fillDirectoryArtwork(for: [show]) }
 
         // Grab the latest episode so there's something ready to play.
         if show.autoDownload, let latest = show.sortedEpisodes.first {
@@ -123,9 +130,11 @@ final class FeedService {
         }
         guard !Task.isCancelled else { return }
 
+        var showsWithNewEpisodes: [Show] = []
         for show in shows {
             guard let feed = results[show.feedURL] else { continue }
             let newEpisodes = apply(feed, to: show)
+            if !newEpisodes.isEmpty { showsWithNewEpisodes.append(show) }
             guard show.autoDownload else { continue }
             let toDownload = newEpisodes
                 .filter { ($0.pubDate ?? .distantPast) > show.subscribedAt.addingTimeInterval(-7 * 86_400) }
@@ -133,6 +142,31 @@ final class FeedService {
                 .prefix(autoDownloadLimit)
             for episode in toDownload {
                 downloads.download(episode, userInitiated: false)
+            }
+        }
+        try? context.save()
+
+        let needsArtwork = shows.filter { show in
+            show.directoryArtworkCheckedAt == nil || showsWithNewEpisodes.contains { $0 === show }
+        }
+        if !needsArtwork.isEmpty { Task { await fillDirectoryArtwork(for: needsArtwork) } }
+    }
+
+    /// Gives episodes without their own cover in the feed the one the Apple Podcasts directory has,
+    /// if it's different from the show's artwork.
+    func fillDirectoryArtwork(for shows: [Show]) async {
+        for show in shows {
+            let missing = show.episodes.filter { $0.directoryImageURL == nil && ($0.imageURL == nil || $0.imageURL == show.artworkURL) }
+            guard !missing.isEmpty else { continue }
+            // Shows that aren't in the directory are looked up again only when new episodes arrive.
+            show.directoryArtworkCheckedAt = .now
+            if show.directoryID == nil {
+                show.directoryID = try? await DirectoryService.directoryID(feedURL: show.feedURL, title: show.title)
+            }
+            guard let id = show.directoryID,
+                  let covers = try? await DirectoryService.episodeArtwork(directoryID: id) else { continue }
+            for episode in missing {
+                if let cover = covers[episode.guid] ?? covers[episode.audioURL] { episode.directoryImageURL = cover }
             }
         }
         try? context.save()
@@ -152,10 +186,20 @@ final class FeedService {
             show.latestEpisodeDate = newest
         }
 
-        var known = Set(show.episodes.map(\.guid))
+        var existing = Dictionary(show.episodes.map { ($0.guid, $0) }, uniquingKeysWith: { first, _ in first })
         var inserted: [Episode] = []
-        for item in feed.episodes where !known.contains(item.guid) {
-            known.insert(item.guid)
+        for item in feed.episodes {
+            if let episode = existing[item.guid] {
+                // Publishers edit notes after release, and older versions of the app kept only the
+                // short description, so keep these in step with the feed.
+                if !item.summary.isEmpty, episode.summary != item.summary { episode.summary = item.summary }
+                if episode.transcriptURL != item.transcriptURL {
+                    episode.transcriptURL = item.transcriptURL
+                    episode.transcriptType = item.transcriptType
+                    PublisherTranscript.delete(episodeID: episode.episodeID)
+                }
+                continue
+            }
             let episode = Episode(
                 episodeID: Storage.episodeID(feedURL: show.feedURL, guid: item.guid),
                 guid: item.guid,
@@ -166,8 +210,11 @@ final class FeedService {
                 audioURL: item.audioURL,
                 imageURL: item.imageURL
             )
+            episode.transcriptURL = item.transcriptURL
+            episode.transcriptType = item.transcriptType
             context.insert(episode)
             episode.show = show
+            existing[item.guid] = episode
             inserted.append(episode)
         }
         show.lastRefreshed = .now

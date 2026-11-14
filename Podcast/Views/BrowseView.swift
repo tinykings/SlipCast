@@ -8,6 +8,7 @@ struct BrowseView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var addingFeed = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         List {
@@ -35,11 +36,17 @@ struct BrowseView: View {
                 ContentUnavailableView.search(text: query)
             }
         }
-        .tabTitle("Search")
+        .navigationTitle("Add Podcast")
+        .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search podcasts")
         .navigationDestination(for: DirectoryPodcast.self) { DirectoryShowView(podcast: $0) }
         .toolbar {
-            Button("Add by URL", systemImage: "link.badge.plus") { addingFeed = true }
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done", systemImage: "xmark") { dismiss() }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Add by URL", systemImage: "link.badge.plus") { addingFeed = true }
+            }
         }
         .sheet(isPresented: $addingFeed) { AddFeedView() }
         .task(id: genre) { await loadChart() }

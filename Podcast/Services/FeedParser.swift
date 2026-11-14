@@ -19,6 +19,13 @@ nonisolated struct ParsedEpisode: Sendable {
     var duration: Double?
     var audioURL = ""
     var imageURL: String?
+    /// The publisher's own transcript (Podcasting 2.0 `podcast:transcript`), best format offered.
+    var transcriptURL: String?
+    var transcriptType: String?
+
+    // Raw notes fields; `summary` is picked from these when the item ends.
+    fileprivate var contentEncoded = ""
+    fileprivate var shortDescription = ""
 }
 
 nonisolated enum FeedError: LocalizedError {
@@ -69,6 +76,14 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
             if let url = attributes["url"], type.hasPrefix("audio") || type.isEmpty || url.hasSuffix(".mp3") {
                 item?.audioURL = url
             }
+        case "podcast:transcript":
+            guard item != nil, let url = attributes["url"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  let format = PublisherTranscript.Format(type: attributes["type"], url: url) else { break }
+            let current = item?.transcriptType.flatMap { PublisherTranscript.Format(type: $0, url: item?.transcriptURL ?? "") }
+            if current.map({ format < $0 }) ?? true {
+                item?.transcriptURL = url
+                item?.transcriptType = attributes["type"] ?? ""
+            }
         case "itunes:image":
             if let href = Self.normalizedImageURL(attributes["href"]) {
                 if item != nil { item?.imageURL = href } else { feed.artworkURL = href }
@@ -101,9 +116,14 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
             case "guid": current.guid = value
             case "pubDate": current.pubDate = Self.parseDate(value)
             case "itunes:duration": current.duration = Self.parseDuration(value)
-            case "description", "itunes:summary", "content:encoded":
-                if current.summary.isEmpty { current.summary = value }
+            // `content:encoded` holds the full notes (links, timestamps, sponsors); `description`
+            // and `itunes:summary` are often just a blurb, so they're only a fallback.
+            case "content:encoded":
+                if current.contentEncoded.isEmpty { current.contentEncoded = value }
+            case "description", "itunes:summary":
+                if value.count > current.shortDescription.count { current.shortDescription = value }
             case "item":
+                current.summary = current.contentEncoded.isEmpty ? current.shortDescription : current.contentEncoded
                 if current.guid.isEmpty { current.guid = current.audioURL }
                 if !current.audioURL.isEmpty { feed.episodes.append(current) }
                 item = nil
@@ -123,7 +143,7 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
         switch name {
         case "title": if feed.title.isEmpty { feed.title = value }
         case "itunes:author": feed.author = value
-        case "description", "itunes:summary": if feed.summary.isEmpty { feed.summary = value }
+        case "description", "itunes:summary": if value.count > feed.summary.count { feed.summary = value }
         case "language": feed.language = value
         case "itunes:explicit": feed.isExplicit = Self.parseExplicit(value)
         default: break

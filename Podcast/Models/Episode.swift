@@ -32,6 +32,11 @@ final class Episode {
     var duration: Double?
     var audioURL: String
     var imageURL: String?
+    /// The episode's own cover from the Apple Podcasts directory, when the feed has none.
+    var directoryImageURL: String?
+    /// The publisher's transcript from the feed, if it offers one we can read.
+    var transcriptURL: String?
+    var transcriptType: String?
     var show: Show?
 
     var fileName: String?
@@ -92,8 +97,14 @@ final class Episode {
 
     var artworkURL: String? { imageURL ?? show?.artworkURL }
 
-    /// Artwork URLs to try, best first: the episode's own, then the show's.
-    var artworkCandidates: [String?] { [imageURL] + (show?.artworkCandidates ?? []) }
+    /// Artwork URLs to try, best first: the episode's own from the feed, then its cover from the
+    /// directory, then the show's. A feed image that's just the show artwork goes after the directory's.
+    var artworkCandidates: [String?] {
+        let showArtwork = show?.artworkCandidates ?? []
+        let feedImageIsShowArt = imageURL != nil && imageURL == show?.artworkURL
+        let episodeImages = feedImageIsShowArt ? [directoryImageURL, imageURL] : [imageURL, directoryImageURL]
+        return episodeImages + showArtwork
+    }
 }
 
 extension ModelContext {

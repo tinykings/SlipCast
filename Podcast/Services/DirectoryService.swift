@@ -54,6 +54,9 @@ nonisolated enum DirectoryService {
             let artworkUrl100: String?
             let feedUrl: String?
             let primaryGenreName: String?
+            let wrapperType: String?
+            let episodeGuid: String?
+            let episodeUrl: String?
         }
         let results: [Item]
     }
@@ -130,11 +133,52 @@ nonisolated enum DirectoryService {
         }
     }
 
+    /// The directory ID of the podcast with this feed, found by searching its title.
+    @concurrent
+    static func directoryID(feedURL: String, title: String) async throws -> Int? {
+        let target = normalizedFeed(feedURL)
+        return try await search(title).first { $0.feedURL.map(normalizedFeed) == target }?.id
+    }
+
+    /// Covers of a podcast's recent episodes (up to 200), keyed by both the episode's guid and its
+    /// audio URL. Covers that are just the show's artwork are left out.
+    @concurrent
+    static func episodeArtwork(directoryID: Int) async throws -> [String: String] {
+        var components = URLComponents(string: "https://itunes.apple.com/lookup")!
+        components.queryItems = [
+            URLQueryItem(name: "id", value: String(directoryID)),
+            URLQueryItem(name: "entity", value: "podcastEpisode"),
+            URLQueryItem(name: "limit", value: "200"),
+        ]
+        let (data, _) = try await URLSession.shared.data(from: components.url!)
+        let results = try JSONDecoder().decode(LookupResponse.self, from: data).results
+        let showArt = results.first { $0.wrapperType != "podcastEpisode" }?.artworkUrl600.map(imageKey)
+        var covers: [String: String] = [:]
+        for item in results where item.wrapperType == "podcastEpisode" {
+            guard let art = item.artworkUrl600 ?? item.artworkUrl100, imageKey(art) != showArt else { continue }
+            if let guid = item.episodeGuid, !guid.isEmpty { covers[guid] = art }
+            if let audio = item.episodeUrl, !audio.isEmpty { covers[audio] = art }
+        }
+        return covers
+    }
+
+    /// Apple's image URLs end in a size ("…/600x600bb.jpg"); the rest names the image.
+    private static func imageKey(_ url: String) -> String {
+        url.split(separator: "/").dropLast().joined(separator: "/")
+    }
+
+    private static func normalizedFeed(_ url: String) -> String {
+        var value = url.lowercased()
+        for prefix in ["https://", "http://"] where value.hasPrefix(prefix) { value.removeFirst(prefix.count) }
+        while value.hasSuffix("/") { value.removeLast() }
+        return value
+    }
+
     private static func lookup(_ url: URL) async throws -> [DirectoryPodcast] {
         let (data, _) = try await URLSession.shared.data(from: url)
         let response = try JSONDecoder().decode(LookupResponse.self, from: data)
         return response.results.compactMap { item in
-            guard let id = item.collectionId, let title = item.collectionName else { return nil }
+            guard item.wrapperType != "podcastEpisode", let id = item.collectionId, let title = item.collectionName else { return nil }
             return DirectoryPodcast(
                 id: id,
                 title: title,

@@ -25,13 +25,13 @@ struct PlayerView: View {
                     .opacity(page == .transcript ? 1 : 0)
                     .animation(.easeOut(duration: 0.2), value: page)
 
-                // The pages fill the room above the title: the transcript uses all of it, while the
-                // artwork and settings sit at the bottom, just above the page dots.
+                // The pages fill the room above the title: the transcript uses all of it, the artwork
+                // is centered in it, and the settings sit at the bottom, just above the page dots.
                 TabView(selection: $page) {
                     transcriptPage(episode).tag(Page.transcript)
                     artworkPage(episode)
                         .padding(.vertical, 20) // room for the shadow; the page view clips
-                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .frame(maxHeight: .infinity, alignment: .center)
                         .tag(Page.artwork)
                     settingsPage
                         .frame(maxHeight: .infinity, alignment: .bottom)
@@ -136,12 +136,31 @@ struct PlayerView: View {
                 onSeek: player.seek(to:)
             )
         } else {
-            Text("Turn on filtering in this show’s settings to see its transcript.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(32)
+            switch player.publisherTranscript {
+            case .loaded(let lines):
+                TranscriptView(
+                    lines: lines,
+                    currentTime: player.currentTime,
+                    playableLimit: player.playableLimit,
+                    isFullyScanned: true,
+                    onSeek: player.seek(to:)
+                )
+            case .loading:
+                ProgressView()
+            case .failed:
+                transcriptMessage("Couldn’t load this episode’s transcript. Turn on filtering in this show’s settings to make one on this device.")
+            case .none:
+                transcriptMessage("This episode doesn’t come with a transcript. Turn on filtering in this show’s settings to make one on this device.")
+            }
         }
+    }
+
+    private func transcriptMessage(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(32)
     }
 
     private func artworkPage(_ episode: Episode) -> some View {
@@ -214,23 +233,52 @@ struct PlayerView: View {
 
 struct MiniPlayerView: View {
     @Environment(PlayerController.self) private var player
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+
+    private var fraction: Double {
+        guard player.duration > 0, player.currentTime.isFinite else { return 0 }
+        return min(1, max(0, player.currentTime / player.duration))
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             ArtworkView(urlStrings: player.episode?.artworkCandidates ?? [], size: 32, cornerRadius: 6)
-            Text(player.episode?.title ?? "")
-                .font(.subheadline.weight(.medium))
-                .lineLimit(1)
-            Spacer()
+            VStack(alignment: .leading, spacing: 3) {
+                Text(player.episode?.title ?? "")
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                // The collapsed (inline) accessory is too short for a second line.
+                if placement != .inline {
+                    HStack(spacing: 6) {
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.secondary.opacity(0.25))
+                                Capsule()
+                                    .fill(Color.accentColor)
+                                    .frame(width: geometry.size.width * fraction)
+                            }
+                        }
+                        .frame(height: 3)
+                        Text("\(Format.clock(player.currentTime)) / \(Format.clock(player.duration))")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .fixedSize()
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Playback position")
+                    .accessibilityValue("\(Format.clock(player.currentTime)) of \(Format.clock(player.duration))")
+                }
+            }
+            Spacer(minLength: 4)
             if player.isWaitingForScan {
                 ProgressView().controlSize(.small)
             }
             Button { player.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                    .frame(width: 32, height: 32)
+                    .contentShape(.rect)
             }
-            Button { player.skip(by: 30) } label: {
-                Image(systemName: "goforward.30")
-            }
+            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 14)
@@ -241,19 +289,23 @@ struct ShowNotesView: View {
     let episode: Episode
     @Environment(\.dismiss) private var dismiss
 
+    /// Built from the HTML once the sheet appears; the HTML importer is too slow for `body`.
+    @State private var notes: AttributedString?
+
     var body: some View {
-        let notes = episode.summary.htmlAsPlainText
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(episode.title)
                         .font(.title3.bold())
-                    if notes.isEmpty {
-                        Text("This episode has no show notes.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(notes)
-                            .textSelection(.enabled)
+                    if let notes {
+                        if notes.characters.isEmpty {
+                            Text("This episode has no show notes.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(notes)
+                                .textSelection(.enabled)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -268,6 +320,7 @@ struct ShowNotesView: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .task(id: episode.episodeID) { notes = ShowNotes.attributed(episode.summary) }
     }
 }
 

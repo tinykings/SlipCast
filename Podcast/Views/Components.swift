@@ -109,24 +109,105 @@ extension String {
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+}
 
-    /// Like `strippingHTML`, but keeps line and paragraph breaks for reading in full.
-    var htmlAsPlainText: String {
-        let regexCaseless: String.CompareOptions = [.regularExpression, .caseInsensitive]
-        return replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: regexCaseless)
-            .replacingOccurrences(of: "</(p|div|h[1-6]|ul|ol)>", with: "\n\n", options: regexCaseless)
-            .replacingOccurrences(of: "<li[^>]*>", with: "\n• ", options: regexCaseless)
-            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .replacingOccurrences(of: "&amp;", with: "&")
+/// Show notes as styled text with tappable links.
+enum ShowNotes {
+    /// Runs the HTML importer, which uses WebKit, so it must run on the main thread.
+    static func attributed(_ notes: String) -> AttributedString {
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return AttributedString() }
+        let text = importHTML(trimmed) ?? NSMutableAttributedString(string: decodeEntities(trimmed))
+        tidy(text)
+        linkBareURLs(in: text)
+        return convert(text)
+    }
+
+    private static func importHTML(_ html: String) -> NSMutableAttributedString? {
+        let caseless: String.CompareOptions = [.regularExpression, .caseInsensitive]
+        guard html.range(of: "<[a-z/][^>]*>", options: caseless) != nil else { return nil }
+        let prepared = html
+            // The importer fetches images synchronously, and they'd show as blank boxes anyway.
+            .replacingOccurrences(of: "<(img|iframe|video|audio|source)\\b[^>]*>", with: "", options: caseless)
+            // Paragraph spacing is a paragraph style, which SwiftUI text ignores; use a blank line.
+            .replacingOccurrences(of: "</(p|h[1-6]|ul|ol)>", with: "$0<br>", options: caseless)
+        guard let data = ("<meta charset=\"utf-8\">" + prepared).data(using: .utf8) else { return nil }
+        return try? NSMutableAttributedString(
+            data: data,
+            options: [
+                .documentType: NSAttributedString.DocumentType.html,
+                .characterEncoding: String.Encoding.utf8.rawValue,
+            ],
+            documentAttributes: nil
+        )
+    }
+
+    private static func decodeEntities(_ text: String) -> String {
+        text.replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&#39;", with: "'")
             .replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "[ \\t]*\\n[ \\t]*", with: "\n", options: .regularExpression)
-            .replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "&amp;", with: "&")
+    }
+
+    private static func tidy(_ text: NSMutableAttributedString) {
+        let string = text.mutableString
+        func replace(_ pattern: String, with template: String) {
+            string.replaceOccurrences(of: pattern, with: template, options: .regularExpression,
+                                      range: NSRange(location: 0, length: string.length))
+        }
+        replace("[\u{2028}\u{2029}]", with: "\n")
+        replace("\u{00A0}", with: " ")
+        replace("\t*([•◦▪]|\\d+\\.)\t", with: "$1 ")  // list markers come out as "\t•\t"
+        replace("[ \t]+\n", with: "\n")
+        replace("\n{3,}", with: "\n\n")
+        let whitespace = CharacterSet.whitespacesAndNewlines
+        while let last = string.length > 0 ? UnicodeScalar(string.character(at: string.length - 1)) : nil,
+              whitespace.contains(last) {
+            text.deleteCharacters(in: NSRange(location: string.length - 1, length: 1))
+        }
+        while let first = string.length > 0 ? UnicodeScalar(string.character(at: 0)) : nil,
+              whitespace.contains(first) {
+            text.deleteCharacters(in: NSRange(location: 0, length: 1))
+        }
+    }
+
+    /// Plain-text notes often paste URLs without a link around them.
+    private static func linkBareURLs(in text: NSMutableAttributedString) {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return }
+        let range = NSRange(location: 0, length: text.length)
+        for match in detector.matches(in: text.string, range: range) {
+            guard let url = match.url,
+                  text.attribute(.link, at: match.range.location, effectiveRange: nil) == nil else { continue }
+            text.addAttribute(.link, value: url, range: match.range)
+        }
+    }
+
+    private static func convert(_ text: NSAttributedString) -> AttributedString {
+        let string = text.string as NSString
+        var result = AttributedString()
+        text.enumerateAttributes(in: NSRange(location: 0, length: text.length)) { attributes, range, _ in
+            var run = AttributedString(string.substring(with: range))
+            if let url = link(attributes[.link]) { run.link = url }
+            if let font = attributes[.font] as? UIFont {
+                let traits = font.fontDescriptor.symbolicTraits
+                var intent: InlinePresentationIntent = []
+                if traits.contains(.traitBold) { intent.insert(.stronglyEmphasized) }
+                if traits.contains(.traitItalic) { intent.insert(.emphasized) }
+                if !intent.isEmpty { run.inlinePresentationIntent = intent }
+            }
+            result += run
+        }
+        return result
+    }
+
+    /// Links without a scheme ("www.example.com") can't be opened, so assume https.
+    private static func link(_ value: Any?) -> URL? {
+        let url = (value as? URL) ?? (value as? String).flatMap { URL(string: $0.trimmingCharacters(in: .whitespaces)) }
+        guard let url else { return nil }
+        if url.scheme != nil { return url }
+        return URL(string: "https://" + url.absoluteString)
     }
 }
 

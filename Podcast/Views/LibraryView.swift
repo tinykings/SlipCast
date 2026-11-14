@@ -19,6 +19,7 @@ struct LibraryView: View {
     @Query private var shows: [Show]
     @Environment(FeedService.self) private var feeds
     @AppStorage("librarySort") private var sort: LibrarySort = .name
+    @State private var addingPodcast = false
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16, alignment: .top)]
 
@@ -37,7 +38,7 @@ struct LibraryView: View {
                 ContentUnavailableView(
                     "No Podcasts Yet",
                     systemImage: "mic",
-                    description: Text("Use Search to find podcasts and subscribe.")
+                    description: Text("Start in Settings by adding the words you want filtered out. Episodes are processed as they download, so set up your filter list before tapping + to add podcasts.")
                 )
             } else {
                 ScrollView {
@@ -56,14 +57,22 @@ struct LibraryView: View {
         }
         .tabTitle("Library")
         .navigationDestination(for: Show.self) { ShowDetailView(show: $0) }
+        .sheet(isPresented: $addingPodcast) {
+            NavigationStack { BrowseView() }
+        }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Add Podcast", systemImage: "plus") { addingPodcast = true }
+            }
             if !shows.isEmpty {
-                Menu {
-                    Picker("Sort By", selection: $sort) {
-                        ForEach(LibrarySort.allCases) { Text($0.title).tag($0) }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Sort By", selection: $sort) {
+                            ForEach(LibrarySort.allCases) { Text($0.title).tag($0) }
+                        }
+                    } label: {
+                        Label("Sort", systemImage: "arrow.up.arrow.down")
                     }
-                } label: {
-                    Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
             }
         }

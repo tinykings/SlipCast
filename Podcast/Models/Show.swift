@@ -12,6 +12,10 @@ final class Show {
     /// Artwork from the directory listing the show was added from. Used when the feed's own
     /// artwork won't load (e.g. a plain-http URL, which App Transport Security blocks).
     var directoryArtworkURL: String?
+    /// Apple Podcasts directory ID, found by matching the feed URL. Used to look up episode covers.
+    var directoryID: Int?
+    /// When episode covers were last looked up in the directory.
+    var directoryArtworkCheckedAt: Date?
     var language: String?
     var filteringEnabled: Bool = false
     /// The feed's show-level `itunes:explicit` tag. Filtering starts on for these.

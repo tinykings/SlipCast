@@ -27,6 +27,8 @@ final class PlayerController {
     var mutedSpotCount: Int { mutedRanges.count }
     /// The transcript found so far, with muted words flagged.
     private(set) var transcriptLines: [TranscriptLine] = []
+    /// The feed's own transcript, shown for episodes that aren't filtered.
+    private(set) var publisherTranscript = PublisherTranscriptState.none
     /// Seconds of the episode scanned for muted words. `.infinity` once fully scanned.
     private(set) var scannedThrough: Double = 0
     private(set) var scanError: String?
@@ -99,9 +101,9 @@ final class PlayerController {
         self.episode?.episodeID == episode.episodeID
     }
 
-    /// Anything can play except an episode whose scan failed.
+    /// Episodes play only once downloaded (there's no streaming); filtered ones also need their scan.
     static func canPlay(_ episode: Episode) -> Bool {
-        !episode.requiresFiltering || (episode.downloadState == .downloaded && episode.processingState == .ready)
+        episode.downloadState == .downloaded && (!episode.requiresFiltering || episode.processingState == .ready)
     }
 
     /// True while the current episode is still downloading.
@@ -172,6 +174,7 @@ final class PlayerController {
         }
         loadScanState(for: episode)
         applyMuting()
+        loadPublisherTranscript(for: episode)
 
         let item = AVPlayerItem(asset: asset)
         if episode.requiresFiltering {
@@ -263,6 +266,7 @@ final class PlayerController {
         automaticAudioScan = nil
         resetCrosstalkCheck()
         transcriptLines = []
+        publisherTranscript = .none
         timeline.update(MuteSnapshot())
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
@@ -276,6 +280,32 @@ final class PlayerController {
     /// Call after the mute list or padding changes.
     func refreshMuting() {
         applyMuting()
+    }
+
+    // MARK: - Publisher transcript
+
+    private func loadPublisherTranscript(for episode: Episode) {
+        guard !episode.requiresFiltering, let url = episode.transcriptURL else {
+            publisherTranscript = .none
+            return
+        }
+        let id = episode.episodeID, type = episode.transcriptType
+        if let words = PublisherTranscript.cached(episodeID: id) {
+            publisherTranscript = .loaded(TranscriptLine.lines(from: words, mutedWordIndices: []))
+            return
+        }
+        publisherTranscript = .loading
+        Task {
+            let state: PublisherTranscriptState
+            do {
+                let words = try await PublisherTranscript.words(episodeID: id, url: url, type: type)
+                state = .loaded(TranscriptLine.lines(from: words, mutedWordIndices: []))
+            } catch {
+                state = .failed
+            }
+            guard self.episode?.episodeID == id else { return }
+            publisherTranscript = state
+        }
     }
 
     // MARK: - Scanning
@@ -749,4 +779,12 @@ final class PlayerController {
     private nonisolated static func makeArtwork(_ image: UIImage) -> MPMediaItemArtwork {
         MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
+}
+
+enum PublisherTranscriptState: Equatable {
+    /// Filtered, or the feed doesn't offer a transcript we can read.
+    case none
+    case loading
+    case loaded([TranscriptLine])
+    case failed
 }

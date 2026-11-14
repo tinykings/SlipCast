@@ -16,9 +16,6 @@ struct RootView: View {
             Tab("Downloads", systemImage: "arrow.down.circle") {
                 NavigationStack { DownloadsView() }
             }
-            Tab("Search", systemImage: "magnifyingglass") {
-                NavigationStack { BrowseView() }
-            }
             Tab("Settings", systemImage: "gearshape") {
                 NavigationStack { SettingsView() }
             }

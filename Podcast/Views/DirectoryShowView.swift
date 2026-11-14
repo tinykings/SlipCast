@@ -100,7 +100,7 @@ struct DirectoryShowView: View {
         isSubscribing = true
         defer { isSubscribing = false }
         do {
-            try await feeds.subscribe(feedURL: feedURL, feed: feed, fallbackArtwork: podcast.artworkURL)
+            try await feeds.subscribe(feedURL: feedURL, feed: feed, fallbackArtwork: podcast.artworkURL, directoryID: podcast.id)
         } catch {
             errorMessage = "Couldn't subscribe: \(error.localizedDescription)"
         }

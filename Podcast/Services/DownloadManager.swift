@@ -119,6 +119,7 @@ final class DownloadManager: NSObject {
             try? FileManager.default.removeItem(at: url)
         }
         TranscriptStore.delete(episodeID: episode.episodeID)
+        PublisherTranscript.delete(episodeID: episode.episodeID)
         try? ReviewedMuteStore().remove(episodeID: episode.episodeID)
         try? OverlapScanStore().remove(episodeID: episode.episodeID)
         CrosstalkFilter.remove(episodeID: episode.episodeID)
@@ -171,6 +172,14 @@ final class DownloadManager: NSObject {
         episode.downloadState = .downloaded
         try? context.save()
         processing.enqueue(episode)
+        prefetchPublisherTranscript(episode)
+    }
+
+    /// Fetches the feed's transcript with the audio, so it can be read offline too.
+    private func prefetchPublisherTranscript(_ episode: Episode) {
+        guard !episode.requiresFiltering, let url = episode.transcriptURL else { return }
+        let id = episode.episodeID, type = episode.transcriptType
+        Task { _ = try? await PublisherTranscript.words(episodeID: id, url: url, type: type) }
     }
 
     private func finishStreaming(_ id: String, fileExtension: String) {
