@@ -25,15 +25,20 @@ struct PlayerView: View {
                     .opacity(page == .transcript ? 1 : 0)
                     .animation(.easeOut(duration: 0.2), value: page)
 
-                Spacer(minLength: 0)
-
+                // The pages fill the room above the title: the transcript uses all of it, while the
+                // artwork and settings sit at the bottom, just above the page dots.
                 TabView(selection: $page) {
                     transcriptPage(episode).tag(Page.transcript)
-                    artworkPage(episode).tag(Page.artwork)
-                    settingsPage.tag(Page.settings)
+                    artworkPage(episode)
+                        .padding(.vertical, 20) // room for the shadow; the page view clips
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .tag(Page.artwork)
+                    settingsPage
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .tag(Page.settings)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: 320)
+                .frame(minHeight: 320, maxHeight: .infinity)
 
                 pageIndicator
 

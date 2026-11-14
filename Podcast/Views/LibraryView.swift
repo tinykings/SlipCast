@@ -20,7 +20,7 @@ struct LibraryView: View {
     @Environment(FeedService.self) private var feeds
     @AppStorage("librarySort") private var sort: LibrarySort = .name
 
-    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
+    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16, alignment: .top)]
 
     private var sortedShows: [Show] {
         switch sort {
