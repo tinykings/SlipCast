@@ -41,6 +41,41 @@ nonisolated enum TranscriptStore {
 
     static func delete(episodeID: String) {
         try? FileManager.default.removeItem(at: url(for: episodeID))
+        deletePartial(episodeID: episodeID)
+    }
+
+    // MARK: Partial transcripts
+
+    /// Words finalized so far by an interrupted transcription, so a later run resumes at
+    /// `through` instead of starting over.
+    struct Partial: Codable {
+        let engine: String
+        let locale: String
+        /// Length of the audio file this was made from, to reject a checkpoint for other audio.
+        let duration: Double
+        let through: Double
+        let words: [TranscriptWord]
+    }
+
+    static func partialURL(for episodeID: String) -> URL {
+        Storage.transcriptsDirectory.appending(path: "\(episodeID).partial.json")
+    }
+
+    static func savePartial(_ partial: Partial, episodeID: String) throws {
+        try JSONEncoder().encode(partial).write(to: partialURL(for: episodeID), options: .atomic)
+    }
+
+    /// The checkpoint if it matches the current engine, locale and audio.
+    static func loadPartial(episodeID: String, locale: Locale, duration: Double) -> Partial? {
+        guard let data = try? Data(contentsOf: partialURL(for: episodeID)),
+              let partial = try? JSONDecoder().decode(Partial.self, from: data),
+              partial.engine == engineIdentifier, partial.locale == locale.identifier,
+              abs(partial.duration - duration) < 0.5, partial.through > 0, partial.through < duration else { return nil }
+        return partial
+    }
+
+    static func deletePartial(episodeID: String) {
+        try? FileManager.default.removeItem(at: partialURL(for: episodeID))
     }
 }
 

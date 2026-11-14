@@ -15,7 +15,9 @@ import UIKit
 final class ProcessingQueue {
     /// episodeID -> 0...1
     private(set) var isPaused = UserDefaults.standard.bool(forKey: AppSettings.processingPausedKey)
-    private(set) var progress: [String: Double] = [:]
+    private(set) var progress: [String: Double] = [:] {
+        didSet { reportContinuedProgress() }
+    }
     private(set) var activeEpisodeID: String?
     private(set) var phaseLabel: [String: String] = [:]
     @ObservationIgnored private(set) var liveAudioScan: OverlapScan?
@@ -38,6 +40,13 @@ final class ProcessingQueue {
     @ObservationIgnored private var transcription: Task<[TranscriptWord], Error>?
     @ObservationIgnored private var priorityID: String?
     @ObservationIgnored private var backgroundTime: UIBackgroundTaskIdentifier = .invalid
+    /// Keeps a run the user started in the app going after they leave it, with system progress UI.
+    @ObservationIgnored private var continuedTask: BGContinuedProcessingTask?
+    @ObservationIgnored private var continuedRequested = false
+    @ObservationIgnored private var processingTask: BGProcessingTask?
+    /// How far the active episode's speech pass is final, for saving a resumable checkpoint.
+    @ObservationIgnored private var speechCheckpoint: (through: Double, duration: Double)?
+    @ObservationIgnored private var lastCheckpointSave = Date.distantPast
 
     init(context: ModelContext) {
         self.context = context
@@ -148,13 +157,20 @@ final class ProcessingQueue {
     @discardableResult
     func start() -> Task<Void, Never> {
         guard !isPaused else { return Task {} }
-        if let runner { return runner }
+        if let runner {
+            // A cancelled run (e.g. iOS ended our background time) may still be unwinding.
+            // Don't hand that back as if it were working: start again once it finishes.
+            if runner.isCancelled { restartRequested = true }
+            return runner
+        }
         let task = Task {
             await drain()
             runner = nil
             if restartRequested && !isPaused {
                 restartRequested = false
                 start()
+            } else {
+                finishContinuedTask()
             }
         }
         runner = task
@@ -183,15 +199,88 @@ final class ProcessingQueue {
     /// Called from the BGProcessingTask handler.
     func run(in bgTask: BGProcessingTask) {
         let box = UncheckedBox(bgTask)
+        processingTask = bgTask
         bgTask.expirationHandler = { @Sendable [weak self] in
             Task { @MainActor in self?.stop() }
         }
         let runner = start()
         Task {
             await runner.value
+            if self.processingTask === box.value { self.processingTask = nil }
             box.value.setTaskCompleted(success: !self.hasPendingWork)
             if self.hasPendingWork { BackgroundWork.scheduleProcessing() }
         }
+    }
+
+    // MARK: Continued processing (iOS 26)
+
+    /// Asks iOS to let this run continue if the user leaves the app. Only allowed while the app
+    /// is in the foreground, i.e. in response to something the user did.
+    private func requestContinuedProcessing(for episode: Episode) {
+        if let continuedTask {
+            continuedTask.updateTitle(Self.continuedTitle, subtitle: episode.title)
+            return
+        }
+        guard !continuedRequested, UIApplication.shared.applicationState == .active else { return }
+        continuedRequested = BackgroundWork.submitContinuedProcessing(title: Self.continuedTitle, subtitle: episode.title)
+    }
+
+    private static let continuedTitle = "Preparing muted words"
+
+    /// Called from the BGContinuedProcessingTask launch handler.
+    func attach(_ task: BGContinuedProcessingTask) {
+        continuedRequested = false
+        guard runner != nil, !isPaused, continuedTask == nil else {
+            task.setTaskCompleted(success: true)
+            return
+        }
+        continuedTask = task
+        task.progress.totalUnitCount = 1000
+        reportContinuedProgress()
+        task.expirationHandler = { @Sendable [weak self] in
+            Task { @MainActor in self?.continuedTaskExpired() }
+        }
+    }
+
+    /// iOS reclaimed the task, or the user cancelled it from the system progress UI.
+    private func continuedTaskExpired() {
+        guard let task = continuedTask else { return }
+        continuedTask = nil
+        task.setTaskCompleted(success: false)
+        // In the foreground the work can carry on; in the background it's about to be suspended.
+        if UIApplication.shared.applicationState != .active {
+            stop()
+            BackgroundWork.scheduleProcessing()
+        }
+    }
+
+    private func finishContinuedTask() {
+        continuedRequested = false
+        guard let task = continuedTask else { return }
+        continuedTask = nil
+        task.progress.completedUnitCount = task.progress.totalUnitCount
+        task.setTaskCompleted(success: !hasPendingWork)
+    }
+
+    private func reportContinuedProgress() {
+        guard let task = continuedTask, let id = activeEpisodeID, let fraction = progress[id] else { return }
+        task.progress.completedUnitCount = Int64((min(1, max(0, fraction)) * 1000).rounded())
+    }
+
+    // MARK: Speech checkpoints
+
+    private func saveSpeechCheckpoint(episodeID id: String, locale: Locale) {
+        guard activeEpisodeID == id, let checkpoint = speechCheckpoint, checkpoint.through > 0,
+              !TranscriptStore.isCurrent(episodeID: id) else { return }
+        let partial = TranscriptStore.Partial(engine: TranscriptStore.engineIdentifier, locale: locale.identifier,
+                                              duration: checkpoint.duration, through: checkpoint.through, words: liveWords)
+        try? TranscriptStore.savePartial(partial, episodeID: id)
+        lastCheckpointSave = Date()
+    }
+
+    private static func audioDuration(of url: URL) -> Double? {
+        guard let file = try? AVAudioFile(forReading: url) else { return nil }
+        return Double(file.length) / file.processingFormat.sampleRate
     }
 
     private func drain() async {
@@ -235,14 +324,26 @@ final class ProcessingQueue {
             return
         }
 
+        let locale = episode.show?.transcriptionLocale ?? .current
+        // Pick up an interrupted speech pass where it stopped instead of starting over.
+        let resume: TranscriptStore.Partial? = if !TranscriptStore.isCurrent(episodeID: id),
+            let duration = Self.audioDuration(of: fileURL) {
+            TranscriptStore.loadPartial(episodeID: id, locale: locale, duration: duration)
+        } else {
+            nil
+        }
+
         episode.processingState = .processing
         activeEpisodeID = id
-        liveWords = []
+        liveWords = resume?.words ?? []
         liveAudioScan = nil
         liveScannedThrough = 0
-        progress[id] = 0
-        phaseLabel[id] = "Transcribing…"
+        speechCheckpoint = resume.map { ($0.through, $0.duration) }
+        lastCheckpointSave = Date()
+        progress[id] = resume.map { 0.25 * $0.through / $0.duration } ?? 0
+        phaseLabel[id] = resume == nil ? "Transcribing…" : "Resuming transcription…"
         try? context.save()
+        requestContinuedProcessing(for: episode)
 
         // Both phases publish through one stream so mute ranges reach the player before the
         // corresponding scanned point advances. A downloaded file waits for acoustic coverage.
@@ -255,6 +356,10 @@ final class ProcessingQueue {
                     liveWords.append(contentsOf: update.words)
                     liveScannedThrough = 0
                     if update.totalDuration > 0 {
+                        speechCheckpoint = (update.scannedThrough, update.totalDuration)
+                        if Date().timeIntervalSince(lastCheckpointSave) > 15 {
+                            saveSpeechCheckpoint(episodeID: id, locale: locale)
+                        }
                         let fraction = min(1, update.scannedThrough / update.totalDuration)
                         progress[id] = 0.25 * fraction
                         phaseLabel[id] = String(format: "Transcribing %.0f%% · %@ of %@", fraction * 100,
@@ -277,7 +382,6 @@ final class ProcessingQueue {
             }
         }
 
-        let locale = episode.show?.transcriptionLocale ?? .current
         let engine = TranscriptStore.engineIdentifier
         let task = Task {
             defer { continuation.finish() }
@@ -285,9 +389,12 @@ final class ProcessingQueue {
             if TranscriptStore.isCurrent(episodeID: id), let cached = try? TranscriptStore.load(episodeID: id) {
                 words = cached
             } else {
-                words = try await TranscriptionService.transcribe(fileURL: fileURL, locale: locale) { update in
+                let rest = try await TranscriptionService.transcribe(
+                    fileURL: fileURL, locale: locale, startingAt: resume?.through ?? 0
+                ) { update in
                     continuation.yield(.speech(update))
                 }
+                words = (resume?.words ?? []) + rest
             }
             try Task.checkCancellation()
             guard let current = context.episode(withID: id), current.requiresFiltering, current.downloadState == .downloaded,
@@ -295,6 +402,7 @@ final class ProcessingQueue {
                   FileManager.default.fileExists(atPath: fileURL.path) else { throw CancellationError() }
             // Keep the completed transcript when iOS interrupts the slower acoustic pass.
             try TranscriptStore.save(words, episodeID: id, engine: engine)
+            TranscriptStore.deletePartial(episodeID: id)
             continuation.yield(.transcriptReady(words))
             let scan = try await OverlapDetector.shared.scan(fileURL: fileURL, episodeID: id,
                 onActivity: { continuation.yield(.activity($0)) },
@@ -332,6 +440,7 @@ final class ProcessingQueue {
                     current.processingState = .none
                 } else if task.isCancelled || error is CancellationError {
                     current.processingState = .pending  // resume later
+                    saveSpeechCheckpoint(episodeID: id, locale: locale)
                 } else {
                     current.processingState = .failed
                     current.processingError = error.localizedDescription
@@ -362,16 +471,24 @@ final class ProcessingQueue {
         liveAudioScan = nil
         liveWords = []
         liveScannedThrough = 0
+        speechCheckpoint = nil
     }
 
     // Gives the current transcription ~30s to finish if the user leaves the app mid-way.
     // (While audio is playing the app keeps running, so processing continues.)
     private func beginBackgroundTime() {
         guard backgroundTime == .invalid else { return }
+        // Called on the main thread; must end the background task before returning, or iOS
+        // suspends (or kills) the app part-way through cancelling.
         backgroundTime = UIApplication.shared.beginBackgroundTask(withName: "Transcription") { @Sendable [weak self] in
-            Task { @MainActor in
-                self?.stop()
-                self?.endBackgroundTime()
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // A continued/processing task is still keeping the app running.
+                if self.continuedTask == nil && self.processingTask == nil {
+                    self.stop()
+                    BackgroundWork.scheduleProcessing()
+                }
+                self.endBackgroundTime()
             }
         }
     }

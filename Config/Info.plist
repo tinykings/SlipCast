@@ -12,6 +12,7 @@
 	<array>
 		<string>com.tinyking.slipcast.refresh</string>
 		<string>com.tinyking.slipcast.process</string>
+		<string>com.tinyking.slipcast.transcribe.*</string>
 	</array>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Episodes are transcribed on your device so SlipCast can mute the words you choose during playback.</string>
