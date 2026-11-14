@@ -29,6 +29,12 @@ final class PlayerController {
     private(set) var transcriptLines: [TranscriptLine] = []
     /// The feed's own transcript, shown for episodes that aren't filtered.
     private(set) var publisherTranscript = PublisherTranscriptState.none
+    /// For unfiltered episodes without a feed transcript: the one made on the device so far.
+    private(set) var readAlongLines: [TranscriptLine] = []
+    /// Seconds of `readAlongLines` that are final; `.infinity` once the transcript is complete.
+    private(set) var readAlongThrough: Double = 0
+    private(set) var readAlongFailed = false
+    @ObservationIgnored private var readAlongRefreshPending = false
     /// Seconds of the episode scanned for muted words. `.infinity` once fully scanned.
     private(set) var scannedThrough: Double = 0
     private(set) var scanError: String?
@@ -175,6 +181,7 @@ final class PlayerController {
         loadScanState(for: episode)
         applyMuting()
         loadPublisherTranscript(for: episode)
+        loadReadAlong(for: episode)
 
         let item = AVPlayerItem(asset: asset)
         if episode.requiresFiltering {
@@ -267,6 +274,9 @@ final class PlayerController {
         resetCrosstalkCheck()
         transcriptLines = []
         publisherTranscript = .none
+        readAlongLines = []
+        readAlongThrough = 0
+        readAlongFailed = false
         timeline.update(MuteSnapshot())
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
@@ -303,8 +313,51 @@ final class PlayerController {
             } catch {
                 state = .failed
             }
-            guard self.episode?.episodeID == id else { return }
+            guard let current = self.episode, current.episodeID == id else { return }
             publisherTranscript = state
+            if state == .failed {
+                processing.publisherTranscriptUnavailable(for: current)
+                loadReadAlong(for: current)
+            }
+        }
+    }
+
+    // MARK: - Read-along transcript
+
+    /// Shows the transcript made on the device for an unfiltered episode, and asks for one to be
+    /// made next if it doesn't have one yet.
+    private func loadReadAlong(for episode: Episode) {
+        let id = episode.episodeID
+        readAlongFailed = false
+        guard !episode.requiresFiltering else {
+            readAlongLines = []
+            readAlongThrough = 0
+            return
+        }
+        let words: [TranscriptWord]
+        if processing.activeIsReadAlong && processing.activeEpisodeID == id {
+            words = processing.liveWords
+            readAlongThrough = processing.liveTranscribedThrough
+        } else if TranscriptStore.isCurrent(episodeID: id) {
+            words = (try? TranscriptStore.load(episodeID: id)) ?? []
+            readAlongThrough = .infinity
+        } else {
+            words = []
+            readAlongThrough = 0
+            readAlongFailed = processing.readAlongFailed(id)
+            processing.preferReadAlong(episode)
+        }
+        readAlongLines = TranscriptLine.lines(from: words, mutedWordIndices: [])
+    }
+
+    private func readAlongProgressed(_ id: String) {
+        guard !readAlongRefreshPending else { return }
+        readAlongRefreshPending = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            readAlongRefreshPending = false
+            guard let episode, episode.episodeID == id, !episode.requiresFiltering else { return }
+            loadReadAlong(for: episode)
         }
     }
 
@@ -385,6 +438,10 @@ final class PlayerController {
     }
 
     private func scanProgressed(_ id: String) {
+        if episode?.episodeID == id, episode?.requiresFiltering == false {
+            readAlongProgressed(id)
+            return
+        }
         guard episode?.episodeID == id, !muteRefreshPending else { return }
         // Coalesce: results can arrive many times per second.
         muteRefreshPending = true
@@ -400,6 +457,10 @@ final class PlayerController {
     private func scanFinished(_ id: String) {
         if id == playWhenReadyID { checkPlayWhenReady() }
         guard let episode, episode.episodeID == id else { return }
+        guard episode.requiresFiltering else {
+            loadReadAlong(for: episode)
+            return
+        }
         switch episode.processingState {
         case .ready:
             loadScanState(for: episode)

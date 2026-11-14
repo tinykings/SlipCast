@@ -88,6 +88,10 @@ private struct ShowTile: View {
                 .grayscale(show.isFullyPlayed ? 0.9 : 0)
                 .opacity(show.isFullyPlayed ? 0.5 : 1)
                 .overlay {
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(.primary.opacity(0.15), lineWidth: 1)
+                }
+                .overlay {
                     if show.isFullyPlayed {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 44, weight: .semibold))

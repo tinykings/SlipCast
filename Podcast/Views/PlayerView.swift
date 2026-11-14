@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlayerView: View {
     @Environment(PlayerController.self) private var player
+    @Environment(ProcessingQueue.self) private var processing
     @Environment(\.dismiss) private var dismiss
 
     private let rates: [Float] = [0.8, 1, 1.2, 1.5, 1.75, 2]
@@ -25,8 +26,8 @@ struct PlayerView: View {
                     .opacity(page == .transcript ? 1 : 0)
                     .animation(.easeOut(duration: 0.2), value: page)
 
-                // The pages fill the room above the title: the transcript uses all of it, the artwork
-                // is centered in it, and the settings sit at the bottom, just above the page dots.
+                // The pages fill the room above the title: the transcript uses all of it, while the artwork
+                // and settings are centered in it.
                 TabView(selection: $page) {
                     transcriptPage(episode).tag(Page.transcript)
                     artworkPage(episode)
@@ -34,7 +35,7 @@ struct PlayerView: View {
                         .frame(maxHeight: .infinity, alignment: .center)
                         .tag(Page.artwork)
                     settingsPage
-                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .frame(maxHeight: .infinity, alignment: .center)
                         .tag(Page.settings)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -147,11 +148,35 @@ struct PlayerView: View {
                 )
             case .loading:
                 ProgressView()
-            case .failed:
-                transcriptMessage("Couldn’t load this episode’s transcript. Turn on filtering in this show’s settings to make one on this device.")
-            case .none:
-                transcriptMessage("This episode doesn’t come with a transcript. Turn on filtering in this show’s settings to make one on this device.")
+            case .none, .failed:
+                readAlongPage(episode)
             }
+        }
+    }
+
+    /// The transcript made on this device, for unfiltered episodes without one from the feed.
+    @ViewBuilder
+    private func readAlongPage(_ episode: Episode) -> some View {
+        if !DeviceSupport.transcriptionAvailable {
+            transcriptMessage("This episode doesn’t come with a transcript, and this device can’t make one.")
+        } else if episode.downloadState != .downloaded {
+            transcriptMessage("A transcript is made on this device once the episode finishes downloading.")
+        } else if player.readAlongFailed && player.readAlongLines.isEmpty {
+            transcriptMessage("Couldn’t make a transcript for this episode.")
+        } else if processing.isPaused && player.readAlongLines.isEmpty {
+            VStack(spacing: 4) {
+                transcriptMessage("Transcribing is paused.")
+                Button("Resume") { processing.resumeProcessing() }
+                    .buttonStyle(.bordered)
+            }
+        } else {
+            TranscriptView(
+                lines: player.readAlongLines,
+                currentTime: player.currentTime,
+                playableLimit: .infinity,
+                isFullyScanned: player.readAlongThrough == .infinity,
+                onSeek: player.seek(to:)
+            )
         }
     }
 
@@ -235,13 +260,16 @@ struct MiniPlayerView: View {
     @Environment(PlayerController.self) private var player
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
 
-    private var fraction: Double {
-        guard player.duration > 0, player.currentTime.isFinite else { return 0 }
-        return min(1, max(0, player.currentTime / player.duration))
-    }
-
     var body: some View {
         HStack(spacing: 10) {
+            Button { player.stop() } label: {
+                Image(systemName: "xmark")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(.rect)
+            }
+            .accessibilityLabel("Stop playback")
             ArtworkView(urlStrings: player.episode?.artworkCandidates ?? [], size: 32, cornerRadius: 6)
             VStack(alignment: .leading, spacing: 3) {
                 Text(player.episode?.title ?? "")
@@ -249,24 +277,13 @@ struct MiniPlayerView: View {
                     .lineLimit(1)
                 // The collapsed (inline) accessory is too short for a second line.
                 if placement != .inline {
-                    HStack(spacing: 6) {
-                        GeometryReader { geometry in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.secondary.opacity(0.25))
-                                Capsule()
-                                    .fill(Color.accentColor)
-                                    .frame(width: geometry.size.width * fraction)
-                            }
-                        }
-                        .frame(height: 3)
-                        Text("\(Format.clock(player.currentTime)) / \(Format.clock(player.duration))")
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Playback position")
-                    .accessibilityValue("\(Format.clock(player.currentTime)) of \(Format.clock(player.duration))")
+                    Text("\(Format.clock(player.currentTime)) / \(Format.clock(player.duration))")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Playback position")
+                        .accessibilityValue("\(Format.clock(player.currentTime)) of \(Format.clock(player.duration))")
                 }
             }
             Spacer(minLength: 4)

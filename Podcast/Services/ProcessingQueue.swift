@@ -9,6 +9,10 @@ import UIKit
 /// Transcribes downloaded episodes one at a time. Runs in the foreground right after a download
 /// finishes, and continues in a BGProcessingTask if the app is backgrounded.
 ///
+/// Episodes of filtered shows come first: they can't play until they're done. Episodes of other
+/// shows get a transcript too, just for reading along, unless the feed provides one. That
+/// transcript is the same file filtering uses, so turning filtering on later reuses it.
+///
 /// While an episode is being transcribed, its words are published live (`liveWords`) so the
 /// player can start before the whole episode is done.
 @Observable
@@ -34,6 +38,17 @@ final class ProcessingQueue {
     @ObservationIgnored var onFinished: ((String) -> Void)?
     /// Waiting to play as soon as it's ready: processed first, including once its download finishes.
     @ObservationIgnored var preferredEpisodeID: String?
+
+    /// The active run only makes a read-along transcript (an unfiltered episode).
+    @ObservationIgnored private(set) var activeIsReadAlong = false
+    /// Seconds of the active read-along episode that are transcribed and final.
+    @ObservationIgnored private(set) var liveTranscribedThrough: Double = 0
+    /// Read-along transcript to make next (the episode being played).
+    @ObservationIgnored private var preferredReadAlongID: String?
+    /// Read-along runs that failed this launch; not retried until the app restarts.
+    @ObservationIgnored private var readAlongFailures: Set<String> = []
+    /// Episodes whose feed transcript couldn't be loaded, so they get one made on the device.
+    @ObservationIgnored private var publisherTranscriptFailed: Set<String> = []
 
     @ObservationIgnored private let context: ModelContext
     @ObservationIgnored private var runner: Task<Void, Never>?
@@ -65,7 +80,8 @@ final class ProcessingQueue {
         if activeEpisodeID != nil { return true }
         let pending = ProcessingState.pending.rawValue
         let descriptor = FetchDescriptor<Episode>(predicate: #Predicate { $0.processingStateRaw == pending })
-        return ((try? context.fetch(descriptor)) ?? []).contains { $0.requiresFiltering }
+        if ((try? context.fetch(descriptor)) ?? []).contains(where: { $0.requiresFiltering }) { return true }
+        return nextReadAlongEpisode() != nil
     }
 
     func enqueue(_ episode: Episode, prioritize: Bool = false) {
@@ -74,6 +90,10 @@ final class ProcessingQueue {
             episode.processingState = .none
             episode.processingError = nil
             try? context.save()
+            if needsReadAlong(episode) {
+                start()
+                if UIApplication.shared.applicationState != .active { BackgroundWork.scheduleProcessing() }
+            }
             return
         }
         if episode.processingState != .processing {
@@ -82,6 +102,9 @@ final class ProcessingQueue {
         }
         if prioritize || episode.episodeID == preferredEpisodeID { priorityID = episode.episodeID }
         try? context.save()
+        // Filtered episodes can't play until they're done, so they go ahead of a read-along run.
+        // That run keeps what it has finished and picks up from there later.
+        if activeIsReadAlong { transcription?.cancel() }
         start()
         if UIApplication.shared.applicationState != .active {
             BackgroundWork.scheduleProcessing()
@@ -95,6 +118,125 @@ final class ProcessingQueue {
         guard activeEpisodeID != episode.episodeID else { return }
         enqueue(episode, prioritize: true)
         if activeEpisodeID != nil { transcription?.cancel() }
+    }
+
+    // MARK: Read-along transcripts
+
+    /// An unfiltered episode that should get a transcript made on the device.
+    func needsReadAlong(_ episode: Episode) -> Bool {
+        let id = episode.episodeID
+        return DeviceSupport.transcriptionAvailable
+            && episode.downloadState == .downloaded && !episode.requiresFiltering && episode.localFileURL != nil
+            && (episode.transcriptURL == nil || publisherTranscriptFailed.contains(id))
+            && !readAlongFailures.contains(id)
+            && !TranscriptStore.isCurrent(episodeID: id)
+    }
+
+    func readAlongFailed(_ episodeID: String) -> Bool {
+        readAlongFailures.contains(episodeID)
+    }
+
+    /// The player is showing this unfiltered episode: make its transcript next.
+    func preferReadAlong(_ episode: Episode) {
+        preferredReadAlongID = episode.episodeID
+        guard needsReadAlong(episode) else { return }
+        if activeIsReadAlong, activeEpisodeID != episode.episodeID { transcription?.cancel() }
+        start()
+    }
+
+    /// The feed's transcript couldn't be loaded; make one on the device instead.
+    func publisherTranscriptUnavailable(for episode: Episode) {
+        publisherTranscriptFailed.insert(episode.episodeID)
+        preferReadAlong(episode)
+    }
+
+    private func nextReadAlongEpisode() -> Episode? {
+        guard DeviceSupport.transcriptionAvailable else { return nil }
+        let downloaded = DownloadState.downloaded.rawValue
+        let descriptor = FetchDescriptor<Episode>(
+            predicate: #Predicate { $0.downloadStateRaw == downloaded },
+            sortBy: [SortDescriptor(\.downloadedAt, order: .reverse)]  // newest are likeliest to be played
+        )
+        let episodes = (try? context.fetch(descriptor)) ?? []
+        if let id = preferredReadAlongID, let preferred = episodes.first(where: { $0.episodeID == id }),
+           needsReadAlong(preferred) {
+            return preferred
+        }
+        return episodes.first(where: needsReadAlong)
+    }
+
+    /// Makes a transcript for reading along. The episode's processing state isn't touched: it
+    /// stays playable throughout.
+    private func transcribeForReading(_ episode: Episode, fileURL: URL) async {
+        let id = episode.episodeID
+        let locale = episode.show?.transcriptionLocale ?? .current
+        let resume = Self.audioDuration(of: fileURL).flatMap {
+            TranscriptStore.loadPartial(episodeID: id, locale: locale, duration: $0)
+        }
+        activeEpisodeID = id
+        activeIsReadAlong = true
+        liveWords = resume?.words ?? []
+        liveTranscribedThrough = resume?.through ?? 0
+        speechCheckpoint = resume.map { ($0.through, $0.duration) }
+        lastCheckpointSave = Date()
+
+        let (updates, continuation) = AsyncStream<TranscriptionUpdate>.makeStream()
+        let consumer = Task {
+            for await update in updates where activeEpisodeID == id {
+                liveWords.append(contentsOf: update.words)
+                liveTranscribedThrough = update.scannedThrough
+                if update.totalDuration > 0 {
+                    speechCheckpoint = (update.scannedThrough, update.totalDuration)
+                    if Date().timeIntervalSince(lastCheckpointSave) > 15 {
+                        saveSpeechCheckpoint(episodeID: id, locale: locale)
+                    }
+                }
+                onLiveUpdate?(id)
+            }
+        }
+        let task = Task {
+            defer { continuation.finish() }
+            let rest = try await TranscriptionService.transcribe(
+                fileURL: fileURL, locale: locale, startingAt: resume?.through ?? 0
+            ) { update in
+                continuation.yield(update)
+            }
+            return (resume?.words ?? []) + rest
+        }
+        transcription = task
+
+        do {
+            let words = try await task.value
+            await consumer.value
+            try Task.checkCancellation()
+            guard !task.isCancelled, let current = context.episode(withID: id),
+                  current.downloadState == .downloaded, let url = current.localFileURL,
+                  FileManager.default.fileExists(atPath: url.path) else { throw CancellationError() }
+            try TranscriptStore.save(words, episodeID: id, engine: TranscriptStore.engineIdentifier)
+            TranscriptStore.deletePartial(episodeID: id)
+        } catch {
+            await consumer.value
+            if task.isCancelled || error is CancellationError {
+                // Cancelled to make way for other work: resume from here later.
+                if context.episode(withID: id)?.downloadState == .downloaded {
+                    saveSpeechCheckpoint(episodeID: id, locale: locale)
+                }
+            } else {
+                readAlongFailures.insert(id)
+            }
+        }
+        // The download was removed while transcribing.
+        if context.episode(withID: id)?.downloadState != .downloaded {
+            TranscriptStore.delete(episodeID: id)
+        }
+
+        transcription = nil
+        activeEpisodeID = nil
+        activeIsReadAlong = false
+        liveWords = []
+        liveTranscribedThrough = 0
+        speechCheckpoint = nil
+        onFinished?(id)
     }
 
     /// Stops work for an episode whose downloaded files are being removed.
@@ -287,7 +429,11 @@ final class ProcessingQueue {
         beginBackgroundTime()
         defer { endBackgroundTime() }
         while !Task.isCancelled {
-            guard let episode = nextEpisode() else { break }
+            guard let episode = nextEpisode() else {
+                guard let readAlong = nextReadAlongEpisode(), let url = readAlong.localFileURL else { break }
+                await transcribeForReading(readAlong, fileURL: url)
+                continue
+            }
             guard let url = episode.localFileURL else {
                 episode.processingState = .failed
                 episode.processingError = "Audio file is missing. Delete and re-download the episode."

@@ -5,7 +5,7 @@ struct EpisodeRow: View {
     let episode: Episode
     var showArtwork = true
     var playsOnSelection = false
-    var showsRemainingTime = false
+    var showsRemainingTime = true
     var showsDownloadedBadge = false
     /// Puts the show's name above the episode, for lists that mix shows.
     var showsShowTitle = false
@@ -27,25 +27,9 @@ struct EpisodeRow: View {
 
     private var isWaitingToPlay: Bool { player.playWhenReadyID == episode.episodeID }
 
-    /// Started listening but not finished (or playing now).
-    private var isListeningInProgress: Bool {
-        guard !episode.isPlayed else { return false }
-        return player.isCurrent(episode) || episode.playbackPosition > 0
-    }
-
-    /// Tint while waiting to play, and an accent border around episodes part-way through.
-    private var rowBackground: AnyView? {
-        guard isWaitingToPlay || isListeningInProgress else { return nil }
-        let fill = isWaitingToPlay ? Color.accentColor.opacity(0.18) : Color(.secondarySystemGroupedBackground)
-        return AnyView(
-            fill.overlay {
-                if isListeningInProgress {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.accentColor, lineWidth: 2)
-                        .padding(2)
-                }
-            }
-        )
+    /// Tint episodes queued to play automatically when ready.
+    private var rowBackground: Color? {
+        isWaitingToPlay ? Color.accentColor.opacity(0.18) : nil
     }
 
     var body: some View {
@@ -121,7 +105,7 @@ struct EpisodeRow: View {
                             .foregroundStyle(episode.isPlayed ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tint))
                             .accessibilityLabel("Downloaded")
                     }
-                    Text(metadata)
+                    metadata
                         .foregroundStyle(episode.isPlayed ? .tertiary : .secondary)
                 }
                 .font(.caption)
@@ -149,21 +133,35 @@ struct EpisodeRow: View {
         }
     }
 
-    private var durationLabel: String? {
-        let isCurrent = player.isCurrent(episode)
-        let duration = isCurrent && player.duration > 0 ? player.duration : episode.duration
-        let position = isCurrent ? player.currentTime : episode.playbackPosition
-        guard showsRemainingTime, position > 0, let duration, duration > 0 else {
-            return Format.duration(duration)
-        }
-        let remaining = max(0, duration - position)
-        return remaining > 0 ? Format.duration(remaining).map { "\($0) left" } : "0 min left"
+    private var playbackDuration: Double? {
+        player.isCurrent(episode) && player.duration > 0 ? player.duration : episode.duration
     }
 
-    private var metadata: String {
-        [episode.pubDate?.formatted(date: .abbreviated, time: .omitted), durationLabel]
-            .compactMap { $0 }
-            .joined(separator: " · ")
+    private var remainingDuration: Double? {
+        let position = player.isCurrent(episode) ? player.currentTime : episode.playbackPosition
+        guard showsRemainingTime, !episode.isPlayed, position > 0,
+              let duration = playbackDuration, duration > 0 else { return nil }
+        return max(0, duration - position)
+    }
+
+    private var durationLabel: String? {
+        if let remaining = remainingDuration {
+            return remaining > 0 ? Format.duration(remaining).map { "\($0) left" } : "0 min left"
+        }
+        return Format.duration(playbackDuration)
+    }
+
+    private var metadata: Text {
+        let date = episode.pubDate?.formatted(date: .abbreviated, time: .omitted)
+        guard let durationLabel else { return Text(date ?? "") }
+        let highlightsRemainingTime = (remainingDuration ?? 0) > 0
+        let duration = Text(durationLabel)
+            .foregroundColor(highlightsRemainingTime ? .accentColor : nil)
+            .fontWeight(highlightsRemainingTime ? .semibold : .regular)
+        if let date {
+            return Text("\(Text(date + " · "))\(duration)")
+        }
+        return duration
     }
 
     private var status: String? {
