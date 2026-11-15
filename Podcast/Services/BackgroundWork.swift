@@ -1,11 +1,13 @@
 import BackgroundTasks
 import Foundation
 
-/// Background feed refresh (BGAppRefreshTask) and transcription (BGProcessingTask).
+/// Background feed refresh (BGAppRefreshTask), a daily refresh while charging (BGProcessingTask)
+/// and transcription (BGProcessingTask).
 /// iOS decides when these actually run based on usage, battery and charging.
 enum BackgroundWork {
     static let refreshID = "com.tinyking.slipcast.refresh"
     static let processID = "com.tinyking.slipcast.process"
+    static let dailyRefreshID = "com.tinyking.slipcast.dailyrefresh"
 
     /// Must be called before the app finishes launching.
     static func register() {
@@ -20,6 +22,10 @@ enum BackgroundWork {
                 AppEnvironment.shared.processing.run(in: task)
             }
         }
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: dailyRefreshID, using: .main) { task in
+            let box = UncheckedBox(task)
+            MainActor.assumeIsolated { handleDailyRefresh(box.value) }
+        }
     }
 
     static func scheduleRefresh() {
@@ -27,6 +33,22 @@ enum BackgroundWork {
         request.earliestBeginDate = Date(timeIntervalSinceNow: 60 * 60)
         try? BGTaskScheduler.shared.submit(request)
     }
+
+    /// App refresh tasks rarely run for apps that aren't opened often, so this asks for a
+    /// processing task too. iOS is much more willing to run those while the phone is charging
+    /// (usually overnight), and gives them minutes rather than seconds.
+    static func scheduleDailyRefresh() {
+        let request = BGProcessingTaskRequest(identifier: dailyRefreshID)
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = true
+        // Counted from the last daily run rather than from now, so resubmitting every time the
+        // app goes to the background doesn't keep pushing it back.
+        let lastRun = UserDefaults.standard.object(forKey: lastDailyRefreshKey) as? Date ?? .distantPast
+        request.earliestBeginDate = max(Date.now, lastRun.addingTimeInterval(20 * 60 * 60))
+        try? BGTaskScheduler.shared.submit(request)
+    }
+
+    private static let lastDailyRefreshKey = "lastDailyRefresh"
 
     static func scheduleProcessing() {
         guard !AppEnvironment.shared.processing.isPaused, AppEnvironment.shared.processing.hasPendingWork else { return }
@@ -73,6 +95,20 @@ enum BackgroundWork {
         let work = Task {
             await AppEnvironment.shared.feeds.refreshAll()
             box.value.setTaskCompleted(success: !Task.isCancelled)
+        }
+        task.expirationHandler = { @Sendable in work.cancel() }
+    }
+
+    /// New episodes for auto-download shows are handed to the background URLSession, which keeps
+    /// downloading after this task ends; finished downloads then queue their own processing.
+    private static func handleDailyRefresh(_ task: BGTask) {
+        let box = UncheckedBox(task)
+        let work = Task {
+            await AppEnvironment.shared.feeds.refreshAll()
+            let finished = !Task.isCancelled
+            if finished { UserDefaults.standard.set(Date.now, forKey: lastDailyRefreshKey) }
+            scheduleDailyRefresh()
+            box.value.setTaskCompleted(success: finished)
         }
         task.expirationHandler = { @Sendable in work.cancel() }
     }

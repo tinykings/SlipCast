@@ -17,8 +17,6 @@ final class DownloadManager: NSObject {
     @ObservationIgnored private let context: ModelContext
     @ObservationIgnored private let processing: ProcessingQueue
     @ObservationIgnored private var session: URLSession!
-    /// Episodes downloading while being played (foreground, see `StreamingSession`).
-    @ObservationIgnored private var streams: [String: StreamingSession] = [:]
 
     init(context: ModelContext, processing: ProcessingQueue) {
         self.context = context
@@ -36,69 +34,30 @@ final class DownloadManager: NSObject {
               let url = URL(string: episode.audioURL)
         else { return }
 
-        var request = URLRequest(url: url)
-        if !userInitiated && AppSettings.wifiOnly {
-            request.allowsExpensiveNetworkAccess = false
-            request.allowsConstrainedNetworkAccess = false
+        let restricted = !userInitiated && AppSettings.wifiOnly
+        let task: URLSessionDownloadTask
+        // A failed transfer picks up where it stopped. Resume data carries the original request's
+        // network rules, so a Wi-Fi-only attempt isn't resumed when the user asks for it now.
+        if let resume = ResumeDataStore.take(episodeID: episode.episodeID),
+           !(resume.restricted && !restricted) {
+            task = session.downloadTask(withResumeData: resume.data)
+        } else {
+            var request = URLRequest(url: url)
+            if restricted {
+                request.allowsExpensiveNetworkAccess = false
+                request.allowsConstrainedNetworkAccess = false
+            }
+            task = session.downloadTask(with: request)
         }
-        let task = session.downloadTask(with: request)
         task.taskDescription = episode.episodeID
         episode.downloadState = .queued
         try? context.save()
         task.resume()
     }
 
-    /// Starts (or returns) a download that can be played and transcribed while it arrives.
-    /// Replaces any background download of the same episode.
-    func stream(_ episode: Episode) -> StreamingSession? {
-        let id = episode.episodeID
-        if let existing = streams[id] { return existing }
-        guard !episode.requiresFiltering, episode.downloadState != .downloaded, let url = URL(string: episode.audioURL) else { return nil }
-
-        if episode.downloadState == .queued || episode.downloadState == .downloading {
-            Task {
-                for task in await session.allTasks where task.taskDescription == id { task.cancel() }
-            }
-        }
-
-        let stream = StreamingSession(episodeID: id, remoteURL: url)
-        stream.onProgress = { [weak self] fraction in
-            Task { @MainActor in self?.updateProgress(id, fraction) }
-        }
-        stream.onComplete = { [weak self] ext in
-            Task { @MainActor in self?.finishStreaming(id, fileExtension: ext) }
-        }
-        stream.onFail = { [weak self] in
-            Task { @MainActor in self?.failStreaming(id) }
-        }
-        streams[id] = stream
-        episode.downloadState = .downloading
-        episode.processingState = .none
-        try? context.save()
-        stream.start()
-
-        return stream
-    }
-
-    func filteringChanged(for show: Show) {
-        for episode in show.episodes {
-            guard let stream = streams.removeValue(forKey: episode.episodeID) else { continue }
-            stream.cancel()
-            progress[episode.episodeID] = nil
-            episode.downloadState = .notDownloaded
-            episode.processingState = .none
-            // Filtering never consumes a partial stream; switch to a complete download.
-            if show.filteringEnabled { download(episode, userInitiated: true) }
-        }
-        try? context.save()
-    }
-
     func cancel(_ episode: Episode) {
         let id = episode.episodeID
-        if let stream = streams.removeValue(forKey: id) {
-            stream.cancel()
-            processing.cancel(id)
-        }
+        ResumeDataStore.remove(episodeID: id)
         episode.downloadState = .notDownloaded
         progress[id] = nil
         try? context.save()
@@ -118,8 +77,10 @@ final class DownloadManager: NSObject {
         if let url = episode.localFileURL {
             try? FileManager.default.removeItem(at: url)
         }
+        ResumeDataStore.remove(episodeID: episode.episodeID)
         TranscriptStore.delete(episodeID: episode.episodeID)
         PublisherTranscript.delete(episodeID: episode.episodeID)
+        Chapters.delete(episodeID: episode.episodeID)
         try? ReviewedMuteStore().remove(episodeID: episode.episodeID)
         try? OverlapScanStore().remove(episodeID: episode.episodeID)
         CrosstalkFilter.remove(episodeID: episode.episodeID)
@@ -128,18 +89,12 @@ final class DownloadManager: NSObject {
         episode.downloadState = .notDownloaded
         episode.processingState = .none
         episode.processingError = nil
+        episode.queueOrder = nil  // a later download goes to the end of the list
         try? context.save()
     }
 
     /// Fix up episodes that think they're downloading but whose task no longer exists.
     func reconcile() async {
-        // Partial files from play-while-downloading sessions don't survive a relaunch.
-        let files = (try? FileManager.default.contentsOfDirectory(
-            at: Storage.episodesDirectory, includingPropertiesForKeys: nil)) ?? []
-        for file in files where file.pathExtension == "partial" && streams.isEmpty {
-            try? FileManager.default.removeItem(at: file)
-        }
-
         let activeIDs = Set(await session.allTasks.compactMap(\.taskDescription))
         let queued = DownloadState.queued.rawValue
         let downloading = DownloadState.downloading.rawValue
@@ -171,8 +126,12 @@ final class DownloadManager: NSObject {
         episode.downloadedAt = .now
         episode.downloadState = .downloaded
         try? context.save()
+        ResumeDataStore.remove(episodeID: id)
         processing.enqueue(episode)
         prefetchPublisherTranscript(episode)
+        if let url = episode.chaptersURL {
+            Task { _ = try? await Chapters.published(episodeID: id, url: url) }
+        }
     }
 
     /// Fetches the feed's transcript with the audio, so it can be read offline too.
@@ -180,42 +139,6 @@ final class DownloadManager: NSObject {
         guard !episode.requiresFiltering, let url = episode.transcriptURL else { return }
         let id = episode.episodeID, type = episode.transcriptType
         Task { _ = try? await PublisherTranscript.words(episodeID: id, url: url, type: type) }
-    }
-
-    private func finishStreaming(_ id: String, fileExtension: String) {
-        guard let stream = streams.removeValue(forKey: id) else { return }
-        progress[id] = nil
-        guard let episode = context.episode(withID: id) else {
-            stream.cancel()
-            return
-        }
-        let fileName = "\(id).\(fileExtension)"
-        let destination = Storage.episodesDirectory.appending(path: fileName)
-        do {
-            try? FileManager.default.removeItem(at: destination)
-            // The player and analyzer keep reading through open file handles, so moving is safe.
-            try FileManager.default.moveItem(at: stream.partialURL, to: destination)
-        } catch {
-            stream.cancel()
-            failStreaming(id)
-            return
-        }
-        episode.fileName = fileName
-        episode.downloadedAt = .now
-        episode.downloadState = .downloaded
-        try? context.save()
-        stream.commitDownload()
-
-        // Not scanned while downloading (unsupported format or interrupted): scan it now.
-        if episode.requiresFiltering && (episode.processingState == .none || episode.processingState == .pending) {
-            processing.processNow(episode)
-        }
-    }
-
-    private func failStreaming(_ id: String) {
-        streams[id] = nil
-        processing.cancel(id)
-        fail(id)
     }
 
     private func fail(_ id: String) {
@@ -284,11 +207,49 @@ extension DownloadManager: URLSessionDownloadDelegate {
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard error != nil, let id = task.taskDescription else { return }
+        guard let error = error as NSError?, let id = task.taskDescription else { return }
+        // Keep what arrived so a retry continues instead of starting over. User cancels don't
+        // produce resume data, and their state is already `.notDownloaded`.
+        if error.code != NSURLErrorCancelled,
+           let data = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
+            let restricted = task.originalRequest?.allowsExpensiveNetworkAccess == false
+            ResumeDataStore.save(data, restricted: restricted, episodeID: id)
+        }
         Task { @MainActor in self.fail(id) }
     }
 
     nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task { @MainActor in self.finishBackgroundEvents() }
+    }
+}
+
+/// Resume data from failed downloads, one file per episode. A `.wifi` marker in the name records
+/// that the original request was limited to Wi-Fi.
+nonisolated enum ResumeDataStore {
+    private static func url(for episodeID: String, restricted: Bool) -> URL {
+        Storage.resumeDataDirectory.appending(path: restricted ? "\(episodeID).wifi" : episodeID)
+    }
+
+    static func save(_ data: Data, restricted: Bool, episodeID: String) {
+        remove(episodeID: episodeID)
+        try? data.write(to: url(for: episodeID, restricted: restricted), options: .atomic)
+    }
+
+    /// Returns and removes the saved resume data, so a bad checkpoint is only tried once.
+    static func take(episodeID: String) -> (data: Data, restricted: Bool)? {
+        for restricted in [false, true] {
+            let file = url(for: episodeID, restricted: restricted)
+            if let data = try? Data(contentsOf: file) {
+                try? FileManager.default.removeItem(at: file)
+                return (data, restricted)
+            }
+        }
+        return nil
+    }
+
+    static func remove(episodeID: String) {
+        for restricted in [false, true] {
+            try? FileManager.default.removeItem(at: url(for: episodeID, restricted: restricted))
+        }
     }
 }

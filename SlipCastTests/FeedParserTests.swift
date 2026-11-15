@@ -21,6 +21,24 @@ final class FeedParserTests: XCTestCase {
         XCTAssertNil(try feed(channel: "").isExplicit)
     }
 
+    func testEpisodeChaptersURL() throws {
+        let item = #"<podcast:chapters url=" https://example.com/1.json " type="application/json+chapters"/>"#
+        XCTAssertEqual(try feed(channel: "", item: item).episodes.first?.chaptersURL, "https://example.com/1.json")
+    }
+
+    func testTruncatedFeedIsMarkedIncomplete() throws {
+        XCTAssertTrue(try feed(channel: "").isComplete)
+        let xml = """
+        <?xml version="1.0"?>
+        <rss version="2.0"><channel><title>Show</title>
+        <item><title>One</title><guid>1</guid><enclosure url="https://example.com/1.mp3" type="audio/mpeg"/></item>
+        <item><title>Two</title><guid>2</guid><enclosure url="https://example.com/2.mp3"
+        """
+        let partial = try FeedParser.parse(Data(xml.utf8))
+        XCTAssertEqual(partial.episodes.map(\.guid), ["1"])
+        XCTAssertFalse(partial.isComplete, "Episodes missing from a broken feed must not be pruned")
+    }
+
     func testEpisodeExplicitTagDoesNotMarkTheShow() throws {
         XCTAssertNil(try feed(channel: "", item: "<itunes:explicit>true</itunes:explicit>").isExplicit)
     }

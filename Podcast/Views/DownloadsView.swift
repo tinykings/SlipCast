@@ -12,6 +12,8 @@ struct DownloadsView: View {
     @Environment(ProcessingQueue.self) private var processing
     @Environment(DownloadManager.self) private var downloads
     @Environment(PlayerController.self) private var player
+    @Environment(\.modelContext) private var context
+    @State private var editMode = EditMode.inactive
 
     private var inProgress: [Episode] {
         episodes.filter(\.isInProgress)
@@ -21,14 +23,19 @@ struct DownloadsView: View {
         episodes.filter { $0.downloadState == .failed || ($0.requiresFiltering && $0.processingState == .failed) }
     }
 
+    /// In the user's order, then anything they haven't placed yet (newest first).
     private var ready: [Episode] {
-        episodes.filter(\.isReady)
+        let ready = episodes.filter(\.isReady)
+        let placed = ready.filter { $0.queueOrder != nil }.sorted { ($0.queueOrder ?? 0) < ($1.queueOrder ?? 0) }
+        return placed + ready.filter { $0.queueOrder == nil }
     }
 
-    /// Downloaded episodes in the order shown (scanning ones first, then ready).
+    /// Play All follows the Ready to Play order.
     private var playAllEpisodes: [Episode] {
-        (inProgress + ready).filter { $0.downloadState == .downloaded && PlayerController.canPlay($0) }
+        ready.filter(PlayerController.canPlay)
     }
+
+    private var isReordering: Bool { editMode.isEditing }
 
     var body: some View {
         List {
@@ -62,11 +69,22 @@ struct DownloadsView: View {
             if !ready.isEmpty {
                 Section {
                     ForEach(ready) { row($0) }
+                        .onMove(perform: move)
                 } header: {
-                    HStack {
+                    HStack(spacing: 16) {
                         Text("Ready to Play")
                         Spacer()
-                        if !playAllEpisodes.isEmpty {
+                        if ready.count > 1 {
+                            Button {
+                                withAnimation { editMode = isReordering ? .inactive : .active }
+                            } label: {
+                                Label(isReordering ? "Done" : "Reorder",
+                                      systemImage: isReordering ? "checkmark" : "arrow.up.arrow.down")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .textCase(nil)
+                        }
+                        if !playAllEpisodes.isEmpty && !isReordering {
                             Button {
                                 player.playAll(playAllEpisodes)
                             } label: {
@@ -77,7 +95,9 @@ struct DownloadsView: View {
                         }
                     }
                 } footer: {
-                    Text("Using \(Format.bytes(Storage.bytesUsed)) of storage.")
+                    Text(isReordering
+                         ? "Drag episodes into the order Play All should play them."
+                         : "Using \(Format.bytes(Storage.bytesUsed)) of storage.")
                 }
             }
         }
@@ -90,7 +110,22 @@ struct DownloadsView: View {
                 )
             }
         }
+        .environment(\.editMode, $editMode)
+        .onChange(of: ready.count) { _, count in
+            if count < 2 { editMode = .inactive }
+        }
         .tabTitle("Downloads")
+    }
+
+    /// Saves the new order for every ready episode, so later downloads go after them.
+    private func move(from source: IndexSet, to destination: Int) {
+        var ordered = ready
+        ordered.move(fromOffsets: source, toOffset: destination)
+        for (index, episode) in ordered.enumerated() where episode.queueOrder != Double(index) {
+            episode.queueOrder = Double(index)
+        }
+        try? context.save()
+        player.reorderUpNext(ordered.map(\.episodeID))
     }
 
     private func row(_ episode: Episode) -> some View {

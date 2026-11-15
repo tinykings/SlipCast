@@ -9,6 +9,8 @@ nonisolated struct ParsedFeed: Sendable {
     /// The show-level `itunes:explicit` tag; nil when the feed doesn't say.
     var isExplicit: Bool?
     var episodes: [ParsedEpisode] = []
+    /// False when an XML error cut parsing short, so `episodes` may be missing some.
+    var isComplete = true
 }
 
 nonisolated struct ParsedEpisode: Sendable {
@@ -22,6 +24,8 @@ nonisolated struct ParsedEpisode: Sendable {
     /// The publisher's own transcript (Podcasting 2.0 `podcast:transcript`), best format offered.
     var transcriptURL: String?
     var transcriptType: String?
+    /// Podcasting 2.0 `podcast:chapters` JSON.
+    var chaptersURL: String?
 
     // Raw notes fields; `summary` is picked from these when the item ends.
     fileprivate var contentEncoded = ""
@@ -53,6 +57,7 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
             throw parser.parserError ?? FeedError.invalidFeed
         }
         if delegate.feed.artworkURL == nil { delegate.feed.artworkURL = delegate.channelImageURL }
+        delegate.feed.isComplete = succeeded
         return delegate.feed
     }
 
@@ -83,6 +88,10 @@ nonisolated final class FeedParser: NSObject, XMLParserDelegate {
             if current.map({ format < $0 }) ?? true {
                 item?.transcriptURL = url
                 item?.transcriptType = attributes["type"] ?? ""
+            }
+        case "podcast:chapters":
+            if item != nil, let url = attributes["url"]?.trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty {
+                item?.chaptersURL = url
             }
         case "itunes:image":
             if let href = Self.normalizedImageURL(attributes["href"]) {

@@ -18,11 +18,17 @@ final class Show {
     var directoryArtworkCheckedAt: Date?
     var language: String?
     var filteringEnabled: Bool = false
+    /// The speed last chosen while playing this show; nil plays at the last speed chosen anywhere.
+    var playbackRate: Double?
     /// The feed's show-level `itunes:explicit` tag. Filtering starts on for these.
     var isExplicit: Bool = false
     var autoDownload: Bool
     var subscribedAt: Date
     var lastRefreshed: Date?
+    /// Cache validators from the last full feed download, sent back so an unchanged feed
+    /// answers 304 instead of resending the whole file.
+    var feedETag: String?
+    var feedLastModified: String?
     /// Publish date of the newest episode in the feed (for sorting and display).
     var latestEpisodeDate: Date?
 

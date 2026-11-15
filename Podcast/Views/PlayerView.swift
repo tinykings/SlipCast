@@ -6,6 +6,7 @@ struct PlayerView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let rates: [Float] = [0.8, 1, 1.2, 1.5, 1.75, 2]
+    private let sleepOptions: [SleepTimer?] = [nil, .minutes(15), .minutes(30), .minutes(45), .minutes(60), .endOfEpisode]
 
     /// Pages swiped through in place of the artwork. Swiping right from the artwork shows the
     /// transcript, swiping left shows the player settings.
@@ -16,6 +17,7 @@ struct PlayerView: View {
     /// Back to the artwork each time the player opens.
     @State private var page = Page.artwork
     @State private var showingNotes = false
+    @State private var showingChapters = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -51,13 +53,31 @@ struct PlayerView: View {
                     Text(episode.show?.title ?? "")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    if !player.upNext.isEmpty {
-                        Label("\(player.upNext.count) up next", systemImage: "text.line.first.and.arrowtriangle.forward")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    if let chapter = player.currentChapter {
+                        Button { showingChapters = true } label: {
+                            Label(chapter.title, systemImage: "list.bullet")
+                                .font(.footnote.weight(.semibold))
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tint)
+                        .accessibilityLabel("Chapter: \(chapter.title)")
+                        .accessibilityHint("Shows all chapters")
                     }
+                    HStack(spacing: 12) {
+                        if !player.upNext.isEmpty {
+                            Label("\(player.upNext.count) up next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                        }
+                        if let timer = player.sleepTimer {
+                            Label(sleepStatus(timer), systemImage: "moon.zzz.fill")
+                                .monospacedDigit()
+                        }
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal)
+                .sheet(isPresented: $showingChapters) { ChaptersView() }
 
                 ScrubberView(
                     currentTime: player.currentTime,
@@ -198,30 +218,88 @@ struct PlayerView: View {
         .accessibilityHint("Shows the show notes")
     }
 
+    /// Centered like the artwork when it fits; scrolls on small screens.
     private var settingsPage: some View {
+        ViewThatFits(in: .vertical) {
+            settingsContent
+            ScrollView { settingsContent }
+                .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+
+    private var settingsContent: some View {
         VStack(spacing: 14) {
             Label("Playback Speed", systemImage: "speedometer")
                 .font(.headline)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+            optionGrid {
                 ForEach(rates, id: \.self) { rate in
-                    let isSelected = player.rate == rate
-                    Button { player.rate = rate } label: {
-                        Text(rateLabel(rate))
-                            .font(.subheadline.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(isSelected ? AnyShapeStyle(Color.onAccent) : AnyShapeStyle(.tint))
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .background(
-                                isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tint.opacity(0.12)),
-                                in: .capsule
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(rateLabel(rate)) speed")
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                    optionButton(rateLabel(rate), isSelected: player.rate == rate) { player.setRate(rate) }
+                        .accessibilityLabel("\(rateLabel(rate)) speed")
                 }
             }
+            Text("Remembered for each show.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Label("Sleep Timer", systemImage: "moon.zzz")
+                .font(.headline)
+                .padding(.top, 10)
+            optionGrid {
+                ForEach(sleepOptions, id: \.self) { option in
+                    optionButton(sleepLabel(option), isSelected: player.sleepTimer == option) {
+                        player.setSleepTimer(option)
+                    }
+                    .accessibilityLabel(option == nil ? "Sleep timer off" : "Sleep \(sleepLabel(option))")
+                }
+            }
+            Group {
+                if let timer = player.sleepTimer {
+                    Text(sleepStatus(timer)).monospacedDigit()
+                } else {
+                    Text("Counts only while audio plays.")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 40)
+        .padding(.vertical, 12)
+    }
+
+    private func optionGrid(@ViewBuilder content: () -> some View) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10, content: content)
+    }
+
+    private func optionButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .foregroundStyle(isSelected ? AnyShapeStyle(Color.onAccent) : AnyShapeStyle(.tint))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(
+                    isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tint.opacity(0.12)),
+                    in: .capsule
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func sleepLabel(_ option: SleepTimer?) -> String {
+        switch option {
+        case nil: "Off"
+        case .minutes(let minutes): "\(minutes) min"
+        case .endOfEpisode: "End of Ep."
+        }
+    }
+
+    private func sleepStatus(_ timer: SleepTimer) -> String {
+        switch timer {
+        case .minutes: "Sleeps in \(Format.clock(player.sleepRemaining))"
+        case .endOfEpisode: "Sleeps at end of episode"
+        }
     }
 
     private var pageIndicator: some View {
@@ -253,6 +331,56 @@ struct PlayerView: View {
 
     private func rateLabel(_ rate: Float) -> String {
         rate == 1 ? "1×" : String(format: "%g×", rate)
+    }
+}
+
+/// The current episode's chapters. Tapping one plays from its start.
+struct ChaptersView: View {
+    @Environment(PlayerController.self) private var player
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollViewReader { proxy in
+                List(player.chapters) { chapter in
+                    let isCurrent = chapter.id == player.currentChapter?.id
+                    Button {
+                        player.seek(to: chapter)
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "speaker.wave.2.fill")
+                                .foregroundStyle(.tint)
+                                .opacity(isCurrent ? 1 : 0)
+                                .accessibilityHidden(true)
+                            Text(chapter.title)
+                                .font(.subheadline.weight(isCurrent ? .semibold : .regular))
+                                .foregroundStyle(.primary)
+                            Spacer(minLength: 8)
+                            Text(Format.clock(chapter.start))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .id(chapter.id)
+                    .accessibilityLabel("\(chapter.title), \(Format.clock(chapter.start))")
+                    .accessibilityAddTraits(isCurrent ? .isSelected : [])
+                }
+                .onAppear {
+                    if let id = player.currentChapter?.id { proxy.scrollTo(id, anchor: .center) }
+                }
+            }
+            .navigationTitle("Chapters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

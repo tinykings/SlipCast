@@ -37,6 +37,8 @@ final class Episode {
     /// The publisher's transcript from the feed, if it offers one we can read.
     var transcriptURL: String?
     var transcriptType: String?
+    /// The publisher's chapters (Podcasting 2.0 `podcast:chapters` JSON), if the feed has them.
+    var chaptersURL: String?
     var show: Show?
 
     var fileName: String?
@@ -47,6 +49,9 @@ final class Episode {
 
     var playbackPosition: Double = 0
     var isPlayed: Bool = false
+    /// Position in the user's Ready to Play order. nil until they reorder; those come after the
+    /// ordered ones, newest first.
+    var queueOrder: Double?
 
     init(
         episodeID: String,

@@ -65,29 +65,6 @@ nonisolated enum TranscriptionService {
         }
     }
 
-    /// Transcribes an episode while it downloads. `connect` receives the analyzer's preferred
-    /// audio format and returns the audio to analyze.
-    @concurrent
-    static func transcribeStream<Input: AsyncSequence & Sendable>(
-        locale: Locale,
-        estimatedDuration: Double,
-        connect: @escaping @Sendable (AVAudioFormat) -> Input,
-        onUpdate: @escaping @Sendable (TranscriptionUpdate) -> Void
-    ) async throws -> [TranscriptWord] where Input.Element == AnalyzerInput {
-        let transcriber = try await makeTranscriber(locale: locale)
-        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
-            throw TranscriptionError.unavailable
-        }
-        let input = connect(format)
-        return try await run(transcriber, totalSeconds: estimatedDuration, onUpdate: onUpdate) { analyzer in
-            if let lastSample = try await analyzer.analyzeSequence(input) {
-                try await analyzer.finalizeAndFinish(through: lastSample)
-            } else {
-                await analyzer.cancelAndFinishNow()
-            }
-        }
-    }
-
     private static func makeTranscriber(locale: Locale) async throws -> SpeechTranscriber {
         guard SpeechTranscriber.isAvailable else { throw TranscriptionError.unavailable }
         guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {

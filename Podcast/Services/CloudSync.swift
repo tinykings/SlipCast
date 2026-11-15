@@ -56,13 +56,18 @@ final class CloudSync {
                     self?.schedule(after: 0)
                 }
             },
-            center.addObserver(forName: ModelContext.didSave, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.schedule() }
+            center.addObserver(forName: ModelContext.didSave, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, !self.isPositionOnlySave(note) else { return }
+                    self.schedule()
+                }
             },
             center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.schedule() }
             },
         ]
+        // Positions saved every few seconds during playback sync when playback pauses or stops.
+        player.onPositionCheckpoint = { [weak self] in self?.schedule() }
         if !cloudReady {
             // A brand-new iCloud account may never send an initial download.
             Task { [weak self] in
@@ -78,6 +83,29 @@ final class CloudSync {
     func refresh() {
         store.synchronize()
         schedule(after: 0)
+    }
+
+    /// Called when the app goes to the background, so the latest position is backed up even if
+    /// the app is suspended before a scheduled pass runs.
+    func syncNow() {
+        scheduled?.cancel()
+        scheduled = nil
+        sync()
+    }
+
+    /// True for the save the player makes every few seconds during playback: only the current
+    /// episode changed, and not its played state, so only its position can be different.
+    /// Anything the notification doesn't describe counts as a real change.
+    private func isPositionOnlySave(_ note: Notification) -> Bool {
+        typealias Key = ModelContext.NotificationKey
+        guard let info = note.userInfo, let current = player.episode,
+              let updated = info[Key.updatedIdentifiers.rawValue] as? [PersistentIdentifier],
+              updated == [current.persistentModelID] else { return false }
+        let inserted = info[Key.insertedIdentifiers.rawValue] as? [PersistentIdentifier] ?? []
+        let deleted = info[Key.deletedIdentifiers.rawValue] as? [PersistentIdentifier] ?? []
+        guard inserted.isEmpty, deleted.isEmpty else { return false }
+        let syncedPlayed = ledger.history.entries[current.episodeID]?.value?.played ?? false
+        return current.isPlayed == syncedPlayed
     }
 
     private func schedule(after delay: Double = 2) {
@@ -126,7 +154,7 @@ final class CloudSync {
             return true
         }
         writePerKey(merged, remote: remote, prefix: Self.showPrefix)
-        try? context.save()
+        if context.hasChanges { try? context.save() }
     }
 
     private func syncHistory(now: Int) {
@@ -153,7 +181,7 @@ final class CloudSync {
         if cloudReady, !unreadable, merged != (remote ?? [:]), let data = try? JSONEncoder().encode(merged) {
             store.set(data, forKey: Self.historyKey)
         }
-        try? context.save()
+        if context.hasChanges { try? context.save() }
     }
 
     private func syncSettings(now: Int) {
@@ -177,7 +205,7 @@ final class CloudSync {
             return true
         }
         writePerKey(merged, remote: remote, prefix: Self.settingPrefix)
-        try? context.save()
+        if context.hasChanges { try? context.save() }
         if mutingChanged { player.refreshMuting() }
     }
 

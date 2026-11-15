@@ -209,13 +209,13 @@ final class ProcessingIntegrationTests: XCTestCase {
         XCTAssertTrue(player.isPlaying, "Re-scanning filtered shows must not pause original audio")
     }
 
-    func testFilteredShowCannotStreamOrPlayBeforeProcessing() async throws {
+    func testFilteredShowCannotPlayBeforeProcessing() async throws {
         let (container, episode, processing, downloads) = try fixture(word: "fuck")
         defer { clean(episode, downloads); withExtendedLifetime(container) {} }
         episode.processingState = .pending
         XCTAssertFalse(PlayerController.canPlay(episode))
         episode.downloadState = .notDownloaded
-        XCTAssertNil(downloads.stream(episode))
+        XCTAssertFalse(PlayerController.canPlay(episode))
         episode.downloadState = .downloaded
         XCTAssertFalse(episode.isReady)
         processing.resetInterrupted()

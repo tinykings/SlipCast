@@ -12,6 +12,7 @@
 	<array>
 		<string>com.tinyking.slipcast.refresh</string>
 		<string>com.tinyking.slipcast.process</string>
+		<string>com.tinyking.slipcast.dailyrefresh</string>
 		<string>com.tinyking.slipcast.transcribe.*</string>
 	</array>
 	<key>NSSpeechRecognitionUsageDescription</key>

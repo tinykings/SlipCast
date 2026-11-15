@@ -9,15 +9,14 @@ import UIKit
 /// Plays downloaded episodes and silences muted words with a real-time audio tap. The audio file
 /// is never modified; changing the mute list just updates the tap, even mid-episode.
 ///
-/// Episodes that aren't downloaded yet are played while they download (`StreamingSession`).
-/// Episodes can play while they're still being scanned. Playback (and seeking) is held behind
-/// the scanned point, like a streaming buffer, and the tap silences anything past it as a backstop.
+/// Filtered episodes play only once fully scanned. If a re-scan starts mid-episode, playback is
+/// held until it finishes, and the tap silences anything past the scanned point as a backstop.
 @Observable
 final class PlayerController {
     private(set) var episode: Episode?
-    /// The user wants audio playing (it may be briefly held while scanning catches up).
+    /// The user wants audio playing (it may be held while a re-scan finishes).
     private(set) var isPlaying = false
-    /// Playback caught up with scanning and is waiting for it to get ahead again.
+    /// A filtered episode is being re-scanned; playback resumes once the scan is complete.
     private(set) var isWaitingForScan = false
     private(set) var currentTime: Double = 0
     private(set) var duration: Double = 0
@@ -42,8 +41,24 @@ final class PlayerController {
     private(set) var upNext: [String] = []
     /// Still downloading or filtering; starts on its own as soon as it can play.
     private(set) var playWhenReadyID: String?
+    /// Called when playback pauses, stops or changes episode, so the position can be synced.
+    /// Periodic position saves during playback don't sync on their own.
+    @ObservationIgnored var onPositionCheckpoint: (() -> Void)?
 
-    var rate: Float = 1 {
+    /// Chapters for the current episode, from the file or the feed. Empty when it has none.
+    private(set) var chapters: [Chapter] = []
+    var currentChapter: Chapter? { chapters.last { $0.start <= currentTime + 0.25 } }
+
+    /// What the sleep timer is set to; nil when it's off.
+    private(set) var sleepTimer: SleepTimer?
+    /// Listening time left on a timed sleep timer. It only counts down while audio plays.
+    private(set) var sleepRemaining: Double = 0
+    @ObservationIgnored private var lastSleepTick: Date?
+    /// The volume fades out over this many seconds before the sleep timer pauses.
+    private let sleepFade = 8.0
+
+    /// Set with `setRate(_:)`, which also remembers it for the show.
+    private(set) var rate: Float = 1 {
         didSet {
             player.defaultRate = rate
             if player.timeControlStatus != .paused { player.rate = rate }
@@ -63,8 +78,6 @@ final class PlayerController {
     @ObservationIgnored private let context: ModelContext
     @ObservationIgnored private let processing: ProcessingQueue
     @ObservationIgnored private let downloads: DownloadManager
-    /// Keeps the play-while-downloading session alive (the resource loader holds it weakly).
-    @ObservationIgnored private var stream: StreamingSession?
     @ObservationIgnored private let timeline = MuteTimeline()
     @ObservationIgnored private var words: [TranscriptWord] = []
     @ObservationIgnored private var automaticAudioScan: OverlapScan?
@@ -82,10 +95,8 @@ final class PlayerController {
     @ObservationIgnored private let keepAlive = SilentKeepAlive()
     @ObservationIgnored private var playWhenReadyTimer: Timer?
 
-    /// Keep playback this far behind the scanned point (covers the 0.5s tick at high speeds).
+    /// Keep seeking this far behind the scanned point while a re-scan is running.
     private let safetyMargin = 2.0
-    /// How far scanning must be ahead before starting or resuming playback.
-    private let startBuffer = 12.0
 
     init(context: ModelContext, processing: ProcessingQueue, downloads: DownloadManager) {
         self.context = context
@@ -107,20 +118,13 @@ final class PlayerController {
         self.episode?.episodeID == episode.episodeID
     }
 
-    /// Episodes play only once downloaded (there's no streaming); filtered ones also need their scan.
+    /// Episodes play only once downloaded; filtered ones also need their scan.
     static func canPlay(_ episode: Episode) -> Bool {
         episode.downloadState == .downloaded && (!episode.requiresFiltering || episode.processingState == .ready)
     }
 
-    /// True while the current episode is still downloading.
-    var isDownloading: Bool {
-        guard let episode else { return false }
-        return episode.downloadState != .downloaded
-    }
-
     var scanStatus: String {
         if processing.isPaused && episode?.requiresFiltering == true { return "Filtering paused · resume in Downloads" }
-        if isDownloading { return "Downloading…" }
         if let id = episode?.episodeID, let phase = processing.phaseLabel[id] { return phase }
         return "Waiting for muted-word processing…"
     }
@@ -155,6 +159,7 @@ final class PlayerController {
         }
 
         savePosition()
+        if self.episode != nil { onPositionCheckpoint?() }
         player.pause()
         removeSkipObserver()
         seekGeneration &+= 1
@@ -166,22 +171,18 @@ final class PlayerController {
         isWaitingForScan = false
         scanError = nil
 
-        let asset: AVURLAsset
-        if episode.downloadState == .downloaded, let url = episode.localFileURL {
-            stream = nil
-            asset = AVURLAsset(url: url)
-            if episode.requiresFiltering && episode.processingState != .ready { processing.processNow(episode) }
-        } else if let session = downloads.stream(episode) {
-            stream = session  // downloads, plays and scans at the same time
-            asset = session.asset
-        } else {
-            scanError = "Couldn't start downloading this episode."
+        guard let url = episode.localFileURL else {
+            scanError = "Audio file is missing. Delete and re-download the episode."
             return
         }
+        let asset = AVURLAsset(url: url)
         loadScanState(for: episode)
         applyMuting()
         loadPublisherTranscript(for: episode)
         loadReadAlong(for: episode)
+
+        rate = Float(episode.show?.playbackRate ?? AppSettings.playbackRate)
+        loadChapters(for: episode, asset: asset)
 
         let item = AVPlayerItem(asset: asset)
         if episode.requiresFiltering {
@@ -201,7 +202,7 @@ final class PlayerController {
         installSkipObserver()
         observeEnd(of: item)
 
-        // The feed's duration is available instantly; the real one may need data that's still downloading.
+        // The feed's duration is available instantly; the file's own is loaded below.
         duration = automaticAudioScan?.duration ?? episode.duration ?? 0
         let id = episode.episodeID
         Task {
@@ -233,6 +234,7 @@ final class PlayerController {
         isPlaying = false
         isWaitingForScan = false
         savePosition()
+        onPositionCheckpoint?()
         updateNowPlaying()
     }
 
@@ -256,13 +258,14 @@ final class PlayerController {
     /// Stops playback and clears the player (e.g. when the current episode's file is deleted).
     func stop() {
         savePosition()
+        if episode != nil { onPositionCheckpoint?() }
+        setSleepTimer(nil)
         player.pause()
         player.replaceCurrentItem(with: nil)
         removeSkipObserver()
         seekGeneration &+= 1
         isSkippingSection = false
         filteredSkipRanges = []
-        stream = nil
         upNext = []
         episode = nil
         isPlaying = false
@@ -277,13 +280,13 @@ final class PlayerController {
         readAlongLines = []
         readAlongThrough = 0
         readAlongFailed = false
+        chapters = []
         timeline.update(MuteSnapshot())
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
     func filteringChanged(for show: Show) {
         if episode?.show?.feedURL == show.feedURL { stop() }
-        downloads.filteringChanged(for: show)
         processing.filteringChanged(for: show)
     }
 
@@ -511,7 +514,8 @@ final class PlayerController {
         if !skipFilteredSectionIfNeeded() { updatePlaybackGate() }
     }
 
-    /// Starts, holds or resumes the player depending on how far ahead scanning is.
+    /// Holds a filtered episode until its scan is complete, otherwise starts the player if the
+    /// user wants it playing.
     private func updatePlaybackGate() {
         guard isPlaying, player.currentItem != nil else { return }
         if episode?.requiresFiltering == true && !isFullyScanned {
@@ -519,20 +523,8 @@ final class PlayerController {
             isWaitingForScan = true
             return
         }
-        let ahead = isFullyScanned ? Double.infinity : playableLimit - currentTime
-        let needed = min(startBuffer, max(0, duration - safetyMargin - currentTime))
-
-        if player.timeControlStatus == .paused {
-            if ahead >= needed && (isFullyScanned || ahead > 0) {
-                isWaitingForScan = false
-                startPlayback()
-            } else {
-                isWaitingForScan = true
-            }
-        } else if ahead <= 0 {
-            player.pause()
-            isWaitingForScan = true
-        }
+        isWaitingForScan = false
+        if player.timeControlStatus == .paused { startPlayback() }
         updateNowPlaying()
     }
 
@@ -632,6 +624,7 @@ final class PlayerController {
     private func tick(_ seconds: Double) {
         guard episode != nil, seconds.isFinite else { return }
         currentTime = seconds
+        if advanceSleepTimer() { return }
         if skipFilteredSectionIfNeeded() { return }
         if !isSkippingSection && !isWaitingForScan && !isActivatingSession && isPlaying && player.timeControlStatus == .paused && player.rate == 0 {
             // Paused by the system (phone call, headphones unplugged, etc.).
@@ -666,6 +659,8 @@ final class PlayerController {
 
     private func didFinish() {
         guard let episode else { return }
+        let sleepsNow = sleepTimer == .endOfEpisode
+        let timer = sleepTimer, remaining = sleepRemaining
         episode.isPlayed = true
         episode.playbackPosition = 0
         currentTime = 0
@@ -678,11 +673,17 @@ final class PlayerController {
             stop()
             downloads.deleteDownload(episode)
             upNext = remainingQueue
+            sleepTimer = timer
+            sleepRemaining = remaining
         } else {
             player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
             updateNowPlaying()
         }
-        playNextInQueue()
+        if sleepsNow {
+            setSleepTimer(nil)  // the queue is kept for later
+        } else {
+            playNextInQueue()
+        }
     }
 
     private func playNextInQueue() {
@@ -693,6 +694,78 @@ final class PlayerController {
                 return
             }
         }
+    }
+
+    // MARK: - Speed
+
+    /// Changes the speed and remembers it for this show and as the default for others.
+    func setRate(_ newRate: Float) {
+        rate = newRate
+        AppSettings.playbackRate = Double(newRate)
+        if let show = episode?.show, show.playbackRate != Double(newRate) {
+            show.playbackRate = Double(newRate)
+            try? context.save()
+        }
+    }
+
+    // MARK: - Up next
+
+    /// Re-sorts a Play All queue after the user reorders the list it came from.
+    func reorderUpNext(_ order: [String]) {
+        guard upNext.count > 1 else { return }
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        upNext = upNext.enumerated()
+            .sorted { (rank[$0.element] ?? Int.max, $0.offset) < (rank[$1.element] ?? Int.max, $1.offset) }
+            .map(\.element)
+    }
+
+    // MARK: - Chapters
+
+    private func loadChapters(for episode: Episode, asset: AVURLAsset) {
+        chapters = []
+        let id = episode.episodeID, url = episode.chaptersURL
+        Task {
+            var found = await Chapters.embedded(in: asset)
+            if found.isEmpty, let url {
+                found = (try? await Chapters.published(episodeID: id, url: url)) ?? []
+            }
+            guard self.episode?.episodeID == id else { return }
+            chapters = found
+        }
+    }
+
+    func seek(to chapter: Chapter) {
+        seek(to: chapter.start)
+    }
+
+    // MARK: - Sleep timer
+
+    /// Starts, changes or (with nil) cancels the sleep timer.
+    func setSleepTimer(_ timer: SleepTimer?) {
+        sleepTimer = timer
+        if case .minutes(let minutes) = timer { sleepRemaining = Double(minutes) * 60 } else { sleepRemaining = 0 }
+        lastSleepTick = nil
+        player.volume = 1
+    }
+
+    /// Counts a timed sleep timer down by the listening time since the last tick, fading out at the
+    /// end. Returns true when it paused playback.
+    private func advanceSleepTimer() -> Bool {
+        guard case .minutes = sleepTimer else { return false }
+        let now = Date.now
+        defer { lastSleepTick = now }
+        guard isPlaying, !isWaitingForScan, player.timeControlStatus == .playing, let last = lastSleepTick else {
+            return false
+        }
+        // Capped so time spent paused (no ticks) isn't counted.
+        sleepRemaining = max(0, sleepRemaining - min(now.timeIntervalSince(last), 1))
+        if sleepRemaining > 0 {
+            player.volume = Float(min(1, sleepRemaining / sleepFade))
+            return false
+        }
+        pause()
+        setSleepTimer(nil)
+        return true
     }
 
     // MARK: - Play when ready
@@ -848,4 +921,9 @@ enum PublisherTranscriptState: Equatable {
     case loading
     case loaded([TranscriptLine])
     case failed
+}
+
+enum SleepTimer: Hashable {
+    case minutes(Int)
+    case endOfEpisode
 }

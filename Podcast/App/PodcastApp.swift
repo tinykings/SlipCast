@@ -25,7 +25,9 @@ struct SlipCastApp: App {
                 env.cloudSync.refresh()
                 Task { await env.feeds.refreshIfStale() }
             case .background:
+                env.cloudSync.syncNow()
                 BackgroundWork.scheduleRefresh()
+                BackgroundWork.scheduleDailyRefresh()
                 BackgroundWork.scheduleProcessing()
             default:
                 break

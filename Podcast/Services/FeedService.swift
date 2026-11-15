@@ -12,22 +12,41 @@ final class FeedService {
 
     /// Max new episodes auto-downloaded per show in one refresh (avoids pulling a back catalog).
     private let autoDownloadLimit = 2
+    /// Feeds fetched at once during a refresh.
+    private static let maxConcurrentFetches = 6
+    /// When `refreshAll` last ran in this session, whether or not every feed loaded.
+    @ObservationIgnored private var lastRefreshAttempt: Date?
 
     init(context: ModelContext, downloads: DownloadManager) {
         self.context = context
         self.downloads = downloads
     }
 
-    @concurrent
     nonisolated static func fetchFeed(_ feedURL: String) async throws -> ParsedFeed {
+        guard case .feed(let feed, _, _) = try await fetchFeed(feedURL, etag: nil, lastModified: nil) else {
+            throw URLError(.badServerResponse)
+        }
+        return feed
+    }
+
+    /// Downloads and parses a feed, or reports `.notModified` when the server says it hasn't
+    /// changed since the validators from the last download.
+    @concurrent
+    nonisolated static func fetchFeed(_ feedURL: String, etag: String?, lastModified: String?) async throws -> FeedFetchResult {
         guard let url = URL(string: feedURL) else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        if let etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
+        if let lastModified { request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since") }
         let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+        let http = response as? HTTPURLResponse
+        if http?.statusCode == 304 { return .notModified }
+        if let http, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse)
         }
-        return try FeedParser.parse(data)
+        return .feed(try FeedParser.parse(data),
+                     etag: http?.value(forHTTPHeaderField: "ETag"),
+                     lastModified: http?.value(forHTTPHeaderField: "Last-Modified"))
     }
 
     func isSubscribed(_ feedURL: String) -> Bool {
@@ -103,28 +122,39 @@ final class FeedService {
         try? context.save()
     }
 
-    /// Refreshes on app open if it's been a while.
+    /// Refreshes on app open if it's been a while. Goes by the last attempt, so a feed that keeps
+    /// failing doesn't make every app open refresh everything. On launch, before any attempt,
+    /// it goes by the most recent successful refresh.
     func refreshIfStale() async {
-        let shows = (try? context.fetch(FetchDescriptor<Show>())) ?? []
-        let oldest = shows.compactMap(\.lastRefreshed).min() ?? .distantPast
-        if Date.now.timeIntervalSince(oldest) > 15 * 60 { await refreshAll() }
+        let last: Date
+        if let lastRefreshAttempt {
+            last = lastRefreshAttempt
+        } else {
+            let shows = (try? context.fetch(FetchDescriptor<Show>())) ?? []
+            last = shows.compactMap(\.lastRefreshed).max() ?? .distantPast
+        }
+        if Date.now.timeIntervalSince(last) > 15 * 60 { await refreshAll() }
     }
 
     func refreshAll() async {
         guard !isRefreshing else { return }
         isRefreshing = true
+        lastRefreshAttempt = .now
         defer { isRefreshing = false }
 
         let shows = (try? context.fetch(FetchDescriptor<Show>())) ?? []
-        let feedURLs = shows.map(\.feedURL)
+        var pending = shows.map { FeedRequest(url: $0.feedURL, etag: $0.feedETag, lastModified: $0.feedLastModified) }[...]
 
-        let results = await withTaskGroup(of: (String, ParsedFeed?).self) { group in
-            for url in feedURLs {
-                group.addTask { (url, try? await Self.fetchFeed(url)) }
+        let results = await withTaskGroup(of: (String, FeedFetchResult?).self) { group in
+            // Start a few fetches, then one more each time one finishes.
+            for _ in 0..<Self.maxConcurrentFetches {
+                guard let next = pending.popFirst() else { break }
+                group.addTask { await next.fetch() }
             }
-            var collected: [String: ParsedFeed] = [:]
-            for await (url, feed) in group {
-                if let feed { collected[url] = feed }
+            var collected: [String: FeedFetchResult] = [:]
+            for await (url, result) in group {
+                if let result { collected[url] = result }
+                if let next = pending.popFirst() { group.addTask { await next.fetch() } }
             }
             return collected
         }
@@ -132,7 +162,13 @@ final class FeedService {
 
         var showsWithNewEpisodes: [Show] = []
         for show in shows {
-            guard let feed = results[show.feedURL] else { continue }
+            guard let result = results[show.feedURL] else { continue }
+            guard case .feed(let feed, let etag, let lastModified) = result else {
+                show.lastRefreshed = .now  // 304: nothing new
+                continue
+            }
+            show.feedETag = etag
+            show.feedLastModified = lastModified
             let newEpisodes = apply(feed, to: show)
             if !newEpisodes.isEmpty { showsWithNewEpisodes.append(show) }
             guard show.autoDownload else { continue }
@@ -198,6 +234,10 @@ final class FeedService {
                     episode.transcriptType = item.transcriptType
                     PublisherTranscript.delete(episodeID: episode.episodeID)
                 }
+                if episode.chaptersURL != item.chaptersURL {
+                    episode.chaptersURL = item.chaptersURL
+                    Chapters.delete(episodeID: episode.episodeID)
+                }
                 continue
             }
             let episode = Episode(
@@ -212,12 +252,50 @@ final class FeedService {
             )
             episode.transcriptURL = item.transcriptURL
             episode.transcriptType = item.transcriptType
+            episode.chaptersURL = item.chaptersURL
             context.insert(episode)
             episode.show = show
             existing[item.guid] = episode
             inserted.append(episode)
         }
+        removeEpisodesDropped(from: feed, show: show)
         show.lastRefreshed = .now
         return inserted
+    }
+
+    /// Deletes episodes the publisher has taken out of the feed, unless they've been downloaded
+    /// or listened to. Skipped when the feed only partly parsed, so a broken file can't empty a show.
+    private func removeEpisodesDropped(from feed: ParsedFeed, show: Show) {
+        guard feed.isComplete, !feed.episodes.isEmpty else { return }
+        let inFeed = Set(feed.episodes.map(\.guid))
+        let dropped = show.episodes.filter { episode in
+            !inFeed.contains(episode.guid)
+                && episode.downloadState == .notDownloaded
+                && episode.processingState == .none
+                && !episode.isPlayed
+                && episode.playbackPosition == 0
+        }
+        for episode in dropped {
+            PublisherTranscript.delete(episodeID: episode.episodeID)
+            Chapters.delete(episodeID: episode.episodeID)
+            context.delete(episode)
+        }
+    }
+}
+
+nonisolated enum FeedFetchResult: Sendable {
+    case feed(ParsedFeed, etag: String?, lastModified: String?)
+    case notModified
+}
+
+/// One feed to fetch during a refresh, with the validators from its last download.
+private nonisolated struct FeedRequest: Sendable {
+    let url: String
+    let etag: String?
+    let lastModified: String?
+
+    /// nil when the fetch or parse failed.
+    func fetch() async -> (String, FeedFetchResult?) {
+        (url, try? await FeedService.fetchFeed(url, etag: etag, lastModified: lastModified))
     }
 }
