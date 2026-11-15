@@ -57,8 +57,10 @@ final class CloudSync {
                 }
             },
             center.addObserver(forName: ModelContext.didSave, object: nil, queue: .main) { [weak self] note in
+                // Notification isn't Sendable, so pull out the (Sendable) identifiers first.
+                let changes = SaveChanges(note)
                 MainActor.assumeIsolated {
-                    guard let self, !self.isPositionOnlySave(note) else { return }
+                    guard let self, !self.isPositionOnlySave(changes) else { return }
                     self.schedule()
                 }
             },
@@ -96,14 +98,10 @@ final class CloudSync {
     /// True for the save the player makes every few seconds during playback: only the current
     /// episode changed, and not its played state, so only its position can be different.
     /// Anything the notification doesn't describe counts as a real change.
-    private func isPositionOnlySave(_ note: Notification) -> Bool {
-        typealias Key = ModelContext.NotificationKey
-        guard let info = note.userInfo, let current = player.episode,
-              let updated = info[Key.updatedIdentifiers.rawValue] as? [PersistentIdentifier],
+    private func isPositionOnlySave(_ changes: SaveChanges) -> Bool {
+        guard let current = player.episode, let updated = changes.updated,
               updated == [current.persistentModelID] else { return false }
-        let inserted = info[Key.insertedIdentifiers.rawValue] as? [PersistentIdentifier] ?? []
-        let deleted = info[Key.deletedIdentifiers.rawValue] as? [PersistentIdentifier] ?? []
-        guard inserted.isEmpty, deleted.isEmpty else { return false }
+        guard changes.inserted.isEmpty, changes.deleted.isEmpty else { return false }
         let syncedPlayed = ledger.history.entries[current.episodeID]?.value?.played ?? false
         return current.isPlayed == syncedPlayed
     }
@@ -461,4 +459,19 @@ protocol KeyValueStore: AnyObject {
 
 extension NSUbiquitousKeyValueStore: KeyValueStore {
     var keys: [String] { Array(dictionaryRepresentation.keys) }
+}
+
+/// The identifiers from a `ModelContext.didSave` notification.
+nonisolated private struct SaveChanges: Sendable {
+    let updated: [PersistentIdentifier]?
+    let inserted: [PersistentIdentifier]
+    let deleted: [PersistentIdentifier]
+
+    init(_ note: Notification) {
+        typealias Key = ModelContext.NotificationKey
+        let info = note.userInfo
+        updated = info?[Key.updatedIdentifiers.rawValue] as? [PersistentIdentifier]
+        inserted = info?[Key.insertedIdentifiers.rawValue] as? [PersistentIdentifier] ?? []
+        deleted = info?[Key.deletedIdentifiers.rawValue] as? [PersistentIdentifier] ?? []
+    }
 }

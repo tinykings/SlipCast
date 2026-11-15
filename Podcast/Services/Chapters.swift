@@ -14,6 +14,9 @@ nonisolated enum Chapters {
     // MARK: Embedded
 
     static func embedded(in asset: AVAsset) async -> [Chapter] {
+        // AVAsset isn't Sendable, but its async load methods are safe to call from any thread.
+        // Without this, the compiler rejects passing the caller's asset to them.
+        nonisolated(unsafe) let asset = asset
         var groups = (try? await asset.loadChapterMetadataGroups(
             bestMatchingPreferredLanguages: Locale.preferredLanguages)) ?? []
         if groups.isEmpty, let locale = (try? await asset.load(.availableChapterLocales))?.first {
