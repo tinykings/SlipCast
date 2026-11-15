@@ -266,6 +266,7 @@ struct MiniPlayerView: View {
     var body: some View {
         GlassEffectContainer(spacing: 10) {
             HStack(spacing: 10) {
+                stopButton
                 episodePill
                 playPauseButton
             }
@@ -274,16 +275,6 @@ struct MiniPlayerView: View {
 
     private var episodePill: some View {
         HStack(spacing: 12) {
-            Button { player.stop() } label: {
-                Image(systemName: "xmark")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 44)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Stop playback")
-
             Button(action: onOpen) {
                 HStack(spacing: 12) {
                     ArtworkView(urlStrings: player.episode?.artworkCandidates ?? [], size: 44, cornerRadius: 8)
@@ -310,10 +301,23 @@ struct MiniPlayerView: View {
             .accessibilityValue("\(Format.clock(player.currentTime)) of \(Format.clock(player.duration))")
             .accessibilityHint("Opens the player")
         }
-        .padding(.leading, 8)
+        .padding(.leading, 10)
         .padding(.trailing, 14)
         .frame(height: height)
         .glassEffect(.regular.interactive(), in: .capsule)
+    }
+
+    private var stopButton: some View {
+        Button { player.stop() } label: {
+            Image(systemName: "xmark")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: height, height: height)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel("Stop playback")
     }
 
     private var playPauseButton: some View {
