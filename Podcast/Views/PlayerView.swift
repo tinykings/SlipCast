@@ -258,47 +258,75 @@ struct PlayerView: View {
 
 struct MiniPlayerView: View {
     @Environment(PlayerController.self) private var player
-    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+    /// Called when the episode pill is tapped. This only opens the player; it never starts playback.
+    let onOpen: () -> Void
+
+    private let height: CGFloat = 64
 
     var body: some View {
-        HStack(spacing: 10) {
+        GlassEffectContainer(spacing: 10) {
+            HStack(spacing: 10) {
+                episodePill
+                playPauseButton
+            }
+        }
+    }
+
+    private var episodePill: some View {
+        HStack(spacing: 12) {
             Button { player.stop() } label: {
                 Image(systemName: "xmark")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 32, height: 44)
                     .contentShape(.rect)
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Stop playback")
-            ArtworkView(urlStrings: player.episode?.artworkCandidates ?? [], size: 32, cornerRadius: 6)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(player.episode?.title ?? "")
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
-                // The collapsed (inline) accessory is too short for a second line.
-                if placement != .inline {
-                    Text("\(Format.clock(player.currentTime)) / \(Format.clock(player.duration))")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Playback position")
-                        .accessibilityValue("\(Format.clock(player.currentTime)) of \(Format.clock(player.duration))")
+
+            Button(action: onOpen) {
+                HStack(spacing: 12) {
+                    ArtworkView(urlStrings: player.episode?.artworkCandidates ?? [], size: 44, cornerRadius: 8)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(player.episode?.title ?? "")
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        Text("\(Format.clock(player.currentTime)) / \(Format.clock(player.duration))")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    if player.isWaitingForScan {
+                        ProgressView().controlSize(.small)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .contentShape(.rect)
             }
-            Spacer(minLength: 4)
-            if player.isWaitingForScan {
-                ProgressView().controlSize(.small)
-            }
-            Button { player.togglePlayPause() } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .frame(width: 32, height: 32)
-                    .contentShape(.rect)
-            }
-            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(player.episode?.title ?? "Now playing")
+            .accessibilityValue("\(Format.clock(player.currentTime)) of \(Format.clock(player.duration))")
+            .accessibilityHint("Opens the player")
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 14)
+        .frame(height: height)
+        .glassEffect(.regular.interactive(), in: .capsule)
+    }
+
+    private var playPauseButton: some View {
+        Button { player.togglePlayPause() } label: {
+            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                .font(.title2)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: height, height: height)
+                .contentShape(.circle)
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 14)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
     }
 }
 

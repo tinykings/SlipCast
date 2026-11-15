@@ -9,11 +9,15 @@ struct EpisodeRow: View {
     var showsDownloadedBadge = false
     /// Puts the show's name above the episode, for lists that mix shows.
     var showsShowTitle = false
+    /// Tapping the row opens the show notes, shows a short description, and leaves playback to a
+    /// separate play button.
+    var opensShowNotes = false
 
     @Environment(\.modelContext) private var context
     @Environment(DownloadManager.self) private var downloads
     @Environment(ProcessingQueue.self) private var processing
     @Environment(PlayerController.self) private var player
+    @State private var showingNotes = false
 
     /// Still downloading (or, when filtered, processing): tapping toggles playing it once it's ready.
     private var offersPlayWhenReady: Bool {
@@ -34,7 +38,14 @@ struct EpisodeRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if playsOnSelection {
+            if opensShowNotes {
+                Button { showingNotes = true } label: {
+                    episodeContent
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows the episode notes")
+            } else if playsOnSelection {
                 Button {
                     if PlayerController.canPlay(episode) {
                         Task { await player.play(episode) }
@@ -58,9 +69,10 @@ struct EpisodeRow: View {
             } else {
                 episodeContent
             }
-            EpisodeActionButton(episode: episode)
+            EpisodeActionButton(episode: episode, alwaysOffersPlay: opensShowNotes)
         }
         .padding(.vertical, 2)
+        .sheet(isPresented: $showingNotes) { ShowNotesView(episode: episode) }
         .listRowBackground(rowBackground)
         .contextMenu {
             if episode.downloadState == .downloaded || episode.downloadState == .failed {
@@ -113,6 +125,12 @@ struct EpisodeRow: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(episode.isPlayed ? .tertiary : .primary)
                     .lineLimit(2)
+                if opensShowNotes, !description.isEmpty {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundStyle(episode.isPlayed ? .tertiary : .secondary)
+                        .lineLimit(3)
+                }
                 if let status {
                     Text(status)
                         .font(.caption)
@@ -120,7 +138,8 @@ struct EpisodeRow: View {
                         .lineLimit(2)
                 }
                 if isWaitingToPlay {
-                    Label("Plays automatically when ready · tap to cancel", systemImage: "play.circle.fill")
+                    Label(opensShowNotes ? "Plays automatically when ready" : "Plays automatically when ready · tap to cancel",
+                          systemImage: "play.circle.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.tint)
                 } else if offersPlayWhenReady && playsOnSelection {
@@ -131,6 +150,11 @@ struct EpisodeRow: View {
             }
             Spacer(minLength: 8)
         }
+    }
+
+    /// Plain-text show notes for the row preview. Only the start is needed for three lines.
+    private var description: String {
+        String(episode.summary.prefix(1500)).strippingHTML
     }
 
     private var playbackDuration: Double? {
@@ -174,7 +198,7 @@ struct EpisodeRow: View {
         case (.downloading, _) where episode.requiresFiltering:
             return "Downloading \(percent(downloads.progress[id])) · filtering starts after download"
         case (.downloading, _): return "Downloading \(percent(downloads.progress[id]))"
-        case (.failed, _): return "Download failed. Tap to retry."
+        case (.failed, _): return opensShowNotes ? "Download failed" : "Download failed. Tap to retry."
         case (.downloaded, _) where !episode.requiresFiltering: return nil
         case (.downloaded, .pending): return "Waiting to process transcript and overlapping voices…"
         case (.downloaded, .processing): return processing.phaseLabel[id] ?? "Processing muted words \(percent(processing.progress[id]))"
@@ -197,6 +221,9 @@ struct EpisodeRow: View {
 
 struct EpisodeActionButton: View {
     let episode: Episode
+    /// Shows a play button even before the episode is ready; tapping it downloads (or processes)
+    /// the episode and plays it once ready.
+    var alwaysOffersPlay = false
 
     @Environment(DownloadManager.self) private var downloads
     @Environment(ProcessingQueue.self) private var processing
@@ -237,7 +264,10 @@ struct EpisodeActionButton: View {
 
     @ViewBuilder
     private var playControl: some View {
-        if episode.downloadState != .downloaded {
+        if alwaysOffersPlay && !PlayerController.canPlay(episode)
+            && !(episode.requiresFiltering && episode.processingState == .failed) {
+            playWhenReadyControl
+        } else if episode.downloadState != .downloaded {
             EmptyView() // the download control is the only action until the episode is on the device
         } else if episode.requiresFiltering && (episode.processingState == .pending || episode.processingState == .processing || episode.processingState == .none) {
             ProgressView().accessibilityLabel("Preparing filtered download")
@@ -259,6 +289,32 @@ struct EpisodeActionButton: View {
                     .accentCircleSymbol()
             }
             .accessibilityLabel(playing ? "Pause" : "Play")
+        }
+    }
+
+    @ViewBuilder
+    private var playWhenReadyControl: some View {
+        if player.playWhenReadyID == episode.episodeID {
+            Button {
+                player.cancelPlayWhenReady()
+            } label: {
+                ProgressView()
+                    .frame(width: 30, height: 30)
+            }
+            .accessibilityLabel("Stop waiting to play")
+        } else {
+            Button {
+                if episode.downloadState == .notDownloaded || episode.downloadState == .failed {
+                    downloads.download(episode, userInitiated: true)
+                }
+                player.togglePlayWhenReady(episode)
+            } label: {
+                Image(systemName: "play.circle.fill")
+                    .font(.title)
+                    .accentCircleSymbol()
+            }
+            .accessibilityLabel("Play")
+            .accessibilityHint(episode.downloadState == .downloaded ? "Plays once it's processed" : "Downloads and plays it")
         }
     }
 }
