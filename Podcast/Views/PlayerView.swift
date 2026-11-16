@@ -104,7 +104,13 @@ struct PlayerView: View {
                     .foregroundStyle(.secondary)
                 }
 
-                HStack(spacing: 44) {
+                let hasMusic = !player.musicSections.isEmpty
+                HStack(spacing: hasMusic ? 26 : 44) {
+                    if hasMusic {
+                        musicSkipButton(forward: false, isEnabled: player.previousMusicStart != nil) {
+                            player.skipToPreviousMusic()
+                        }
+                    }
                     Button { player.skip(by: -15) } label: {
                         Image(systemName: "gobackward.15").font(.system(size: 30))
                     }
@@ -117,6 +123,11 @@ struct PlayerView: View {
                     Button { player.skip(by: 30) } label: {
                         Image(systemName: "goforward.30").font(.system(size: 30))
                     }
+                    if hasMusic {
+                        musicSkipButton(forward: true, isEnabled: player.nextMusicStart != nil) {
+                            player.skipToNextMusic()
+                        }
+                    }
                 }
                 .buttonStyle(.plain)
                 .padding(.bottom, 12)
@@ -127,6 +138,24 @@ struct PlayerView: View {
         }
         .presentationDragIndicator(.hidden)
         .onChange(of: player.episode?.id) { page = .artwork }
+    }
+
+    /// Jumps to the next or previous place music plays on its own, which is usually where an ad
+    /// break starts or ends.
+    private func musicSkipButton(forward: Bool, isEnabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 1) {
+                if !forward { Image(systemName: "chevron.left.2").font(.system(size: 13, weight: .bold)) }
+                Image(systemName: "music.note").font(.system(size: 22))
+                if forward { Image(systemName: "chevron.right.2").font(.system(size: 13, weight: .bold)) }
+            }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+        }
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.3)
+        .accessibilityLabel(forward ? "Skip to next music" : "Back to previous music")
+        .accessibilityHint("Music often marks the start or end of an ad")
     }
 
     private func filteredCount(_ episode: Episode) -> some View {
@@ -662,7 +691,7 @@ struct TranscriptView: View {
     private func row(_ line: TranscriptLine, isCurrent: Bool) -> some View {
         let isMuted = line.containsMutedWord
         let canSeek = line.start <= playableLimit
-        return Text(attributed(line))
+        return Text(line.isMusic ? musicText(line) : attributed(line))
             .font(.callout)
             .foregroundStyle(isCurrent ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -711,7 +740,17 @@ struct TranscriptView: View {
         return result
     }
 
+    private func musicText(_ line: TranscriptLine) -> AttributedString {
+        var text = AttributedString("♪ Music · \(Int((line.end - line.start).rounded())) sec")
+        text.foregroundColor = .accentColor
+        text.inlinePresentationIntent = .stronglyEmphasized
+        return text
+    }
+
     private func accessibilityText(_ line: TranscriptLine) -> String {
+        if line.isMusic {
+            return "\(Format.clock(line.start)), music, \(Int((line.end - line.start).rounded())) seconds"
+        }
         let text = line.words.compactMap { word -> String? in
             if word.isSkipMarker { return "skipped crosstalk" }
             if word.isMuted { return "muted" }

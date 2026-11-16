@@ -42,6 +42,7 @@ nonisolated enum TranscriptStore {
     static func delete(episodeID: String) {
         try? FileManager.default.removeItem(at: url(for: episodeID))
         deletePartial(episodeID: episodeID)
+        MusicSections.delete(episodeID: episodeID)
     }
 
     // MARK: Partial transcripts
@@ -94,6 +95,8 @@ nonisolated struct TranscriptLine: Identifiable, Sendable, Hashable {
     var start: Double
     var end: Double
     var words: [Word]
+    /// Not speech: marks where music plays without anyone talking. Has no words.
+    var isMusic = false
 
     var containsMutedWord: Bool { words.contains { $0.isMuted || $0.isSkipped || $0.isSkipMarker } }
 
@@ -135,5 +138,23 @@ nonisolated struct TranscriptLine: Identifiable, Sendable, Hashable {
         }
         if let current { lines.append(current) }
         return lines
+    }
+
+    /// Adds a line for each music section, in time order. Lines are renumbered.
+    static func adding(_ music: [MusicSection], to lines: [TranscriptLine]) -> [TranscriptLine] {
+        guard !music.isEmpty else { return lines }
+        var result: [TranscriptLine] = []
+        var next = 0
+        func appendMusic() {
+            result.append(TranscriptLine(id: result.count, start: music[next].start, end: music[next].end,
+                                         words: [], isMusic: true))
+            next += 1
+        }
+        for line in lines {
+            while next < music.count, music[next].start <= line.start { appendMusic() }
+            result.append(TranscriptLine(id: result.count, start: line.start, end: line.end, words: line.words))
+        }
+        while next < music.count { appendMusic() }
+        return result
     }
 }

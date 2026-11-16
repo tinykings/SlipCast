@@ -40,7 +40,12 @@ nonisolated enum TranscriptionService {
         let sampleRate = audioFile.processingFormat.sampleRate
         let totalSeconds = Double(audioFile.length) / sampleRate
         let startFrame = AVAudioFramePosition(max(0, start) * sampleRate)
-        guard startFrame > 0, startFrame < audioFile.length else {
+        let resumes = startFrame > 0 && startFrame < audioFile.length
+        // Tells the caller the speech model is ready and analysis is starting, so it can notice
+        // if nothing more ever arrives.
+        onUpdate(TranscriptionUpdate(
+            words: [], scannedThrough: resumes ? Double(startFrame) / sampleRate : 0, totalDuration: totalSeconds))
+        guard resumes else {
             return try await run(transcriber, totalSeconds: totalSeconds, onUpdate: onUpdate) { analyzer in
                 if let lastSample = try await analyzer.analyzeSequence(from: audioFile) {
                     try await analyzer.finalizeAndFinish(through: lastSample)

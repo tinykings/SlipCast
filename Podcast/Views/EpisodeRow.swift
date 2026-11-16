@@ -17,6 +17,13 @@ struct EpisodeRow: View {
     @Environment(ProcessingQueue.self) private var processing
     @Environment(PlayerController.self) private var player
     @State private var showingNotes = false
+    @Query(sort: \MutedTerm.createdAt) private var mutedTerms: [MutedTerm]
+    @State private var filteredWordCount: Int?
+
+    /// Processed for muted words, so there's a count to show.
+    private var isFiltered: Bool {
+        episode.requiresFiltering && episode.downloadState == .downloaded && episode.processingState == .ready
+    }
 
     private var isWaitingToPlay: Bool { player.playWhenReadyID == episode.episodeID }
 
@@ -42,6 +49,17 @@ struct EpisodeRow: View {
         .padding(.vertical, 2)
         .sheet(isPresented: $showingNotes) { ShowNotesView(episode: episode) }
         .listRowBackground(rowBackground)
+        .task(id: FilteredCountKey(isFiltered: isFiltered, terms: mutedTerms.map(\.text))) {
+            let id = episode.episodeID
+            guard isFiltered else {
+                FilteredWordCount.forget(episodeID: id)
+                filteredWordCount = nil
+                return
+            }
+            let terms = mutedTerms.map(\.text)
+            let count = await FilteredWordCount.count(episodeID: id, fileURL: episode.localFileURL, terms: terms)
+            if !Task.isCancelled { filteredWordCount = count }
+        }
         .contextMenu {
             if episode.downloadState == .downloaded || episode.downloadState == .failed {
                 Button("Remove Download", systemImage: "trash", role: .destructive) {
@@ -54,6 +72,7 @@ struct EpisodeRow: View {
                     processing.enqueue(episode, prioritize: true)
                 }
             }
+            ReprocessButton(episode: episode)
             if episode.downloadState == .queued || episode.downloadState == .downloading {
                 Button("Cancel Download", systemImage: "xmark.circle") {
                     if player.isCurrent(episode) { player.stop() }
@@ -104,6 +123,15 @@ struct EpisodeRow: View {
                         .font(.caption)
                         .foregroundStyle(episode.isPlayed ? .tertiary : .secondary)
                         .lineLimit(3)
+                }
+                if isFiltered, let count = filteredWordCount
+                    ?? FilteredWordCount.cached(episodeID: episode.episodeID, terms: mutedTerms.map(\.text)) {
+                    Label(count == 0 ? "No muted words found"
+                            : count == 1 ? "1 muted word filtered" : "\(count) muted words filtered",
+                          systemImage: "speaker.slash.fill")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(episode.isPlayed ? .tertiary : .secondary)
                 }
                 if let status {
                     // Progress text changes many times a second. Fixed-width digits and a
@@ -200,6 +228,11 @@ struct EpisodeRow: View {
     }
 }
 
+private struct FilteredCountKey: Equatable {
+    let isFiltered: Bool
+    let terms: [String]
+}
+
 /// The round button on the right of an episode row. Episodes that aren't on the device get a
 /// download button (downloading never starts playback); downloaded episodes get play/pause.
 struct EpisodeActionButton: View {
@@ -289,6 +322,22 @@ struct EpisodeActionButton: View {
             .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
             .accessibilityLabel(playing ? "Pause" : "Play")
             .accessibilityHint(PlayerController.canPlay(episode) ? "" : "Plays once it's filtered")
+        }
+    }
+}
+
+/// Redoes an episode's transcript and muted-word scan. Shows nothing unless the episode is
+/// downloaded and its show is filtered. For swipe actions and menus.
+struct ReprocessButton: View {
+    let episode: Episode
+    @Environment(PlayerController.self) private var player
+
+    var body: some View {
+        if episode.requiresFiltering && episode.downloadState == .downloaded {
+            Button("Reprocess", systemImage: "waveform.badge.magnifyingglass") {
+                player.reprocess(episode)
+            }
+            .tint(.indigo)
         }
     }
 }

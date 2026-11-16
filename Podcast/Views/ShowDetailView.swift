@@ -183,6 +183,7 @@ private struct ShowEpisodeRows: View {
                             if player.isCurrent(episode) { player.stop() }
                             downloads.deleteDownload(episode)
                         }
+                        ReprocessButton(episode: episode)
                     } else if episode.downloadState == .notDownloaded {
                         Button(episode.isPlayed ? "Unplayed" : "Played",
                                systemImage: episode.isPlayed ? "circle" : "checkmark.circle") {

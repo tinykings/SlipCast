@@ -62,6 +62,13 @@ final class ProcessingQueue {
     /// How far the active episode's speech pass is final, for saving a resumable checkpoint.
     @ObservationIgnored private var speechCheckpoint: (through: Double, duration: Double)?
     @ObservationIgnored private var lastCheckpointSave = Date.distantPast
+    /// Gives up waiting for the active run. See `finished(_:)`.
+    @ObservationIgnored private var abandonRun: (() -> Void)?
+    @ObservationIgnored private var runCount = 0
+    /// The active run is transcribing speech (not yet scanning for overlapping voices).
+    @ObservationIgnored private var inSpeechPass = false
+    @ObservationIgnored private var speechBeats = 0
+    @ObservationIgnored private var speechWatchdog: Task<Void, Never>?
 
     init(context: ModelContext) {
         self.context = context
@@ -104,7 +111,7 @@ final class ProcessingQueue {
         try? context.save()
         // Filtered episodes can't play until they're done, so they go ahead of a read-along run.
         // That run keeps what it has finished and picks up from there later.
-        if activeIsReadAlong { transcription?.cancel() }
+        if activeIsReadAlong { cancelTranscription() }
         start()
         if UIApplication.shared.applicationState != .active {
             BackgroundWork.scheduleProcessing()
@@ -117,7 +124,7 @@ final class ProcessingQueue {
         guard episode.requiresFiltering, episode.downloadState == .downloaded, episode.processingState != .ready else { return }
         guard activeEpisodeID != episode.episodeID else { return }
         enqueue(episode, prioritize: true)
-        if activeEpisodeID != nil { transcription?.cancel() }
+        if activeEpisodeID != nil { cancelTranscription() }
     }
 
     // MARK: Read-along transcripts
@@ -140,7 +147,7 @@ final class ProcessingQueue {
     func preferReadAlong(_ episode: Episode) {
         preferredReadAlongID = episode.episodeID
         guard needsReadAlong(episode) else { return }
-        if activeIsReadAlong, activeEpisodeID != episode.episodeID { transcription?.cancel() }
+        if activeIsReadAlong, activeEpisodeID != episode.episodeID { cancelTranscription() }
         start()
     }
 
@@ -175,6 +182,7 @@ final class ProcessingQueue {
         }
         activeEpisodeID = id
         activeIsReadAlong = true
+        inSpeechPass = true
         liveWords = resume?.words ?? []
         liveTranscribedThrough = resume?.through ?? 0
         speechCheckpoint = resume.map { ($0.through, $0.duration) }
@@ -183,6 +191,7 @@ final class ProcessingQueue {
         let (updates, continuation) = AsyncStream<TranscriptionUpdate>.makeStream()
         let consumer = Task {
             for await update in updates where activeEpisodeID == id {
+                speechBeat()
                 liveWords.append(contentsOf: update.words)
                 liveTranscribedThrough = update.scannedThrough
                 if update.totalDuration > 0 {
@@ -206,7 +215,7 @@ final class ProcessingQueue {
         transcription = task
 
         do {
-            let words = try await task.value
+            let words = try await finished(task)
             await consumer.value
             try Task.checkCancellation()
             guard !task.isCancelled, let current = context.episode(withID: id),
@@ -214,7 +223,10 @@ final class ProcessingQueue {
                   FileManager.default.fileExists(atPath: url.path) else { throw CancellationError() }
             try TranscriptStore.save(words, episodeID: id, engine: TranscriptStore.engineIdentifier)
             TranscriptStore.deletePartial(episodeID: id)
+            // Quick: only the wordless gaps are listened to. Ready before the episode is played.
+            _ = await MusicSections.load(episodeID: id, fileURL: url, allowPublisherTranscript: false)
         } catch {
+            continuation.finish()  // an abandoned run never gets to
             await consumer.value
             if task.isCancelled || error is CancellationError {
                 // Cancelled to make way for other work: resume from here later.
@@ -230,6 +242,7 @@ final class ProcessingQueue {
             TranscriptStore.delete(episodeID: id)
         }
 
+        endSpeechPass()
         transcription = nil
         activeEpisodeID = nil
         activeIsReadAlong = false
@@ -241,13 +254,13 @@ final class ProcessingQueue {
 
     /// Stops work for an episode whose downloaded files are being removed.
     func cancel(_ episodeID: String) {
-        if activeEpisodeID == episodeID { transcription?.cancel() }
+        if activeEpisodeID == episodeID { cancelTranscription() }
         if priorityID == episodeID { priorityID = nil }
     }
 
     func filteringChanged(for show: Show) {
         if let id = activeEpisodeID, show.episodes.contains(where: { $0.episodeID == id }) {
-            transcription?.cancel()
+            cancelTranscription()
         }
         for episode in show.episodes where episode.downloadState == .downloaded {
             episode.processingState = show.filteringEnabled ? .pending : .none
@@ -278,7 +291,7 @@ final class ProcessingQueue {
 
     /// Re-scan the existing audio with Apple transcription; reviewed audio mutes are kept.
     func rescanDownloads(prioritize episodeID: String? = nil) {
-        transcription?.cancel()
+        cancelTranscription()
         if let activeEpisodeID { resetAfterCancellation.insert(activeEpisodeID) }
         priorityID = episodeID
         for episode in (try? context.fetch(FetchDescriptor<Episode>())) ?? [] {
@@ -292,6 +305,27 @@ final class ProcessingQueue {
         liveWords = []
         liveAudioScan = nil
         liveScannedThrough = 0
+        try? context.save()
+        start()
+    }
+
+    /// Throws away one episode's transcript and overlap scan and makes them again, ahead of
+    /// everything else. Reviewed audio mutes are kept.
+    func reprocess(_ episode: Episode) {
+        guard episode.requiresFiltering, episode.downloadState == .downloaded else { return }
+        let id = episode.episodeID
+        if let activeEpisodeID {
+            // Whatever is running makes way; if it's this episode, its files are deleted again
+            // once the run has stopped writing them.
+            if activeEpisodeID == id { resetAfterCancellation.insert(id) }
+            cancelTranscription()
+        }
+        TranscriptStore.delete(episodeID: id)
+        try? OverlapScanStore().remove(episodeID: id)
+        CrosstalkFilter.remove(episodeID: id)
+        episode.processingState = .pending
+        episode.processingError = nil
+        priorityID = id
         try? context.save()
         start()
     }
@@ -335,7 +369,7 @@ final class ProcessingQueue {
     func stop() {
         restartRequested = false
         runner?.cancel()
-        transcription?.cancel()
+        cancelTranscription()
     }
 
     /// Called from the BGProcessingTask handler.
@@ -425,6 +459,56 @@ final class ProcessingQueue {
         return Double(file.length) / file.processingFormat.sampleRate
     }
 
+    // MARK: Stuck transcription
+
+    /// Waits for a run to end. Speech analysis that iOS suspended part-way can come back dead:
+    /// it reports nothing more and ignores cancellation. Waiting on it directly would block the
+    /// queue until the app is relaunched, so a run like that is abandoned (and resumed from its
+    /// checkpoint) instead.
+    private func finished<T: Sendable>(_ task: Task<T, Error>) async throws -> T {
+        runCount += 1
+        defer { abandonRun = nil }
+        return try await withCheckedThrowingContinuation { continuation in
+            let gate = RunGate(continuation)
+            abandonRun = { gate.resume(with: .failure(CancellationError())) }
+            Task { gate.resume(with: await task.result) }
+        }
+    }
+
+    /// Cancels the active run. If its speech pass hasn't unwound shortly after, it's abandoned.
+    private func cancelTranscription() {
+        guard let transcription else { return }
+        transcription.cancel()
+        let run = runCount
+        Task {
+            try? await Task.sleep(for: .seconds(10))
+            if runCount == run, inSpeechPass { abandonRun?() }
+        }
+    }
+
+    /// The speech pass reported. From the first report on, a long silence means it's stuck.
+    private func speechBeat() {
+        speechBeats += 1
+        guard inSpeechPass, speechWatchdog == nil else { return }
+        speechWatchdog = Task {
+            var seen = -1
+            while !Task.isCancelled, inSpeechPass, speechBeats != seen {
+                seen = speechBeats
+                // Wall-clock time, so this also fires right after the app was suspended.
+                try? await Task.sleep(for: .seconds(180))
+            }
+            guard !Task.isCancelled, inSpeechPass, let transcription else { return }
+            transcription.cancel()
+            abandonRun?()
+        }
+    }
+
+    private func endSpeechPass() {
+        inSpeechPass = false
+        speechWatchdog?.cancel()
+        speechWatchdog = nil
+    }
+
     private func drain() async {
         beginBackgroundTime()
         defer { endBackgroundTime() }
@@ -481,6 +565,7 @@ final class ProcessingQueue {
 
         episode.processingState = .processing
         activeEpisodeID = id
+        inSpeechPass = true
         liveWords = resume?.words ?? []
         liveAudioScan = nil
         liveScannedThrough = 0
@@ -499,6 +584,7 @@ final class ProcessingQueue {
                 guard let current = context.episode(withID: id), current.processingState == .processing else { continue }
                 switch update {
                 case .speech(let update):
+                    speechBeat()
                     liveWords.append(contentsOf: update.words)
                     liveScannedThrough = 0
                     if update.totalDuration > 0 {
@@ -512,6 +598,7 @@ final class ProcessingQueue {
                                                 Format.clock(update.scannedThrough), Format.clock(update.totalDuration))
                     }
                 case .transcriptReady(let words):
+                    endSpeechPass()
                     liveWords = words
                     liveScannedThrough = 0
                     phaseLabel[id] = "Finding overlapping voices…"
@@ -549,6 +636,7 @@ final class ProcessingQueue {
             // Keep the completed transcript when iOS interrupts the slower acoustic pass.
             try TranscriptStore.save(words, episodeID: id, engine: engine)
             TranscriptStore.deletePartial(episodeID: id)
+            _ = await MusicSections.load(episodeID: id, fileURL: fileURL, allowPublisherTranscript: false)
             continuation.yield(.transcriptReady(words))
             let scan = try await OverlapDetector.shared.scan(fileURL: fileURL, episodeID: id,
                 onActivity: { continuation.yield(.activity($0)) },
@@ -564,7 +652,7 @@ final class ProcessingQueue {
         transcription = task
 
         do {
-            _ = try await task.value
+            _ = try await finished(task)
             await consumer.value
             try Task.checkCancellation()
             guard !task.isCancelled, let current = context.episode(withID: id),
@@ -574,6 +662,7 @@ final class ProcessingQueue {
             current.processingState = .ready
             current.processingError = nil
         } catch {
+            continuation.finish()  // an abandoned run never gets to
             await consumer.value
             if let current = context.episode(withID: id) {
                 if current.downloadState != .downloaded {
@@ -608,6 +697,7 @@ final class ProcessingQueue {
             CrosstalkFilter.remove(episodeID: id)
         }
 
+        endSpeechPass()
         transcription = nil
         activeEpisodeID = nil
         progress[id] = nil
@@ -643,6 +733,20 @@ final class ProcessingQueue {
         guard backgroundTime != .invalid else { return }
         UIApplication.shared.endBackgroundTask(backgroundTime)
         backgroundTime = .invalid
+    }
+}
+
+/// Resumes a continuation once, with whichever comes first: the run's result or giving up on it.
+private final class RunGate<T: Sendable> {
+    private var continuation: CheckedContinuation<T, Error>?
+
+    init(_ continuation: CheckedContinuation<T, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(with result: Result<T, Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
     }
 }
 

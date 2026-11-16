@@ -49,6 +49,17 @@ final class PlayerController {
     private(set) var chapters: [Chapter] = []
     var currentChapter: Chapter? { chapters.last { $0.start <= currentTime + 0.25 } }
 
+    /// Where music plays without speech, often the start or end of an ad break. Found from the
+    /// finished transcript, so it's empty until there is one.
+    private(set) var musicSections: [MusicSection] = []
+    @ObservationIgnored private var musicTask: Task<Void, Never>?
+    @ObservationIgnored private var musicLoaded = false
+    var nextMusicStart: Double? {
+        musicSections.first { $0.start > currentTime + 0.5 && $0.start <= playableLimit }?.start
+    }
+    /// The music section before this one (or the start of this one, once a few seconds in).
+    var previousMusicStart: Double? { musicSections.last { $0.start < currentTime - 3 }?.start }
+
     /// What the sleep timer is set to; nil when it's off.
     private(set) var sleepTimer: SleepTimer?
     /// Listening time left on a timed sleep timer. It only counts down while audio plays.
@@ -170,6 +181,7 @@ final class PlayerController {
         artwork = nil
         isWaitingForScan = false
         scanError = nil
+        resetMusic()
 
         guard let url = episode.localFileURL else {
             scanError = "Audio file is missing. Delete and re-download the episode."
@@ -180,6 +192,7 @@ final class PlayerController {
         applyMuting()
         loadPublisherTranscript(for: episode)
         loadReadAlong(for: episode)
+        loadMusicSections()
 
         rate = Float(episode.show?.playbackRate ?? AppSettings.playbackRate)
         loadChapters(for: episode, asset: asset)
@@ -275,6 +288,7 @@ final class PlayerController {
         mutedRanges = []
         automaticAudioScan = nil
         resetCrosstalkCheck()
+        resetMusic()
         transcriptLines = []
         publisherTranscript = .none
         readAlongLines = []
@@ -304,7 +318,7 @@ final class PlayerController {
         }
         let id = episode.episodeID, type = episode.transcriptType
         if let words = PublisherTranscript.cached(episodeID: id) {
-            publisherTranscript = .loaded(TranscriptLine.lines(from: words, mutedWordIndices: []))
+            publisherTranscript = .loaded(withMusic(TranscriptLine.lines(from: words, mutedWordIndices: [])))
             return
         }
         publisherTranscript = .loading
@@ -312,7 +326,7 @@ final class PlayerController {
             let state: PublisherTranscriptState
             do {
                 let words = try await PublisherTranscript.words(episodeID: id, url: url, type: type)
-                state = .loaded(TranscriptLine.lines(from: words, mutedWordIndices: []))
+                state = .loaded(withMusic(TranscriptLine.lines(from: words, mutedWordIndices: [])))
             } catch {
                 state = .failed
             }
@@ -321,6 +335,8 @@ final class PlayerController {
             if state == .failed {
                 processing.publisherTranscriptUnavailable(for: current)
                 loadReadAlong(for: current)
+            } else {
+                loadMusicSections()
             }
         }
     }
@@ -350,7 +366,7 @@ final class PlayerController {
             readAlongFailed = processing.readAlongFailed(id)
             processing.preferReadAlong(episode)
         }
-        readAlongLines = TranscriptLine.lines(from: words, mutedWordIndices: [])
+        readAlongLines = withMusic(TranscriptLine.lines(from: words, mutedWordIndices: []))
     }
 
     private func readAlongProgressed(_ id: String) {
@@ -435,7 +451,21 @@ final class PlayerController {
     func rescanDownloads() {
         if episode?.requiresFiltering == true { pause() }
         processing.rescanDownloads(prioritize: episode?.requiresFiltering == true ? episode?.episodeID : nil)
+        // The transcript is being made again; music is found again from the new one.
+        if episode?.requiresFiltering == true { resetMusic() }
         if let episode { loadScanState(for: episode) }
+        scanError = nil
+        applyMuting()
+    }
+
+    /// Redoes the transcript and muted-word scan for one downloaded episode.
+    func reprocess(_ target: Episode) {
+        let isCurrent = episode?.episodeID == target.episodeID
+        if isCurrent { pause() }
+        processing.reprocess(target)
+        guard isCurrent else { return }
+        resetMusic()
+        loadScanState(for: target)
         scanError = nil
         applyMuting()
     }
@@ -462,12 +492,14 @@ final class PlayerController {
         guard let episode, episode.episodeID == id else { return }
         guard episode.requiresFiltering else {
             loadReadAlong(for: episode)
+            loadMusicSections()
             return
         }
         switch episode.processingState {
         case .ready:
             loadScanState(for: episode)
             applyMuting()
+            loadMusicSections()
         case .failed:
             player.pause()
             isPlaying = false
@@ -506,8 +538,8 @@ final class PlayerController {
         filteredSkipRanges = ranges
         installSkipObserver()
         let mutedWords = Set(matches.flatMap { Array($0) })
-        transcriptLines = TranscriptLine.lines(from: words, mutedWordIndices: mutedWords,
-            skippedRanges: MuteMatcher.merge(automaticRanges + reviewedRanges, joiningGapsUnder: 0.08))
+        transcriptLines = withMusic(TranscriptLine.lines(from: words, mutedWordIndices: mutedWords,
+            skippedRanges: MuteMatcher.merge(automaticRanges + reviewedRanges, joiningGapsUnder: 0.08)))
         // A word just past the scanned point could have padding reaching back before it.
         let scannedUntil = isFullyScanned ? Double.infinity : scannedThrough - padding - MuteTap.fade
         timeline.update(MuteSnapshot(ranges: ranges, scannedUntil: scannedUntil))
@@ -736,6 +768,53 @@ final class PlayerController {
 
     func seek(to chapter: Chapter) {
         seek(to: chapter.start)
+    }
+
+    // MARK: - Music sections
+
+    /// Jumps to where music next starts: with luck, the end of an ad.
+    func skipToNextMusic() {
+        if let start = nextMusicStart { seek(to: start) }
+    }
+
+    func skipToPreviousMusic() {
+        if let start = previousMusicStart { seek(to: start) }
+    }
+
+    private func withMusic(_ lines: [TranscriptLine]) -> [TranscriptLine] {
+        TranscriptLine.adding(musicSections, to: lines)
+    }
+
+    private func resetMusic() {
+        musicTask?.cancel()
+        musicTask = nil
+        musicLoaded = false
+        musicSections = []
+    }
+
+    /// Loads the current episode's music sections once it has a complete transcript. Called
+    /// again whenever one may have become available.
+    private func loadMusicSections() {
+        guard !musicLoaded, musicTask == nil, let episode, episode.downloadState == .downloaded,
+              let url = episode.localFileURL else { return }
+        let id = episode.episodeID, allowPublisher = !episode.requiresFiltering
+        musicTask = Task {
+            let found = await MusicSections.load(episodeID: id, fileURL: url, allowPublisherTranscript: allowPublisher)
+            // stop() and loading another episode cancel this task, so the episode is still current.
+            guard !Task.isCancelled else { return }
+            musicTask = nil
+            guard let found else { return }
+            musicLoaded = true
+            musicSections = found
+            guard !found.isEmpty, let episode = self.episode else { return }
+            // Show them in whichever transcript is on screen.
+            if episode.requiresFiltering {
+                applyMuting()
+            } else {
+                if case .loaded = publisherTranscript { loadPublisherTranscript(for: episode) }
+                loadReadAlong(for: episode)
+            }
+        }
     }
 
     // MARK: - Sleep timer

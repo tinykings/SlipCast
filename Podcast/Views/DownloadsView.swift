@@ -30,7 +30,7 @@ struct DownloadsView: View {
         return placed + ready.filter { $0.queueOrder == nil }
     }
 
-    /// Play All follows the Ready to Play order.
+    /// Play All follows the order of the ready list.
     private var playAllEpisodes: [Episode] {
         ready.filter(PlayerController.canPlay)
     }
@@ -72,7 +72,6 @@ struct DownloadsView: View {
                         .onMove(perform: move)
                 } header: {
                     HStack(spacing: 16) {
-                        Text("Ready to Play")
                         Spacer()
                         if ready.count > 1 {
                             Button {
@@ -135,6 +134,7 @@ struct DownloadsView: View {
                     if player.isCurrent(episode) { player.stop() }
                     downloads.deleteDownload(episode)
                 }
+                ReprocessButton(episode: episode)
             }
     }
 }
