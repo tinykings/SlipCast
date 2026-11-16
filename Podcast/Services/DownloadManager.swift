@@ -50,6 +50,7 @@ final class DownloadManager: NSObject {
             task = session.downloadTask(with: request)
         }
         task.taskDescription = episode.episodeID
+        if !userInitiated { NewEpisodeNotifier.markAutomatic(episode.episodeID) }
         episode.downloadState = .queued
         try? context.save()
         task.resume()
@@ -57,6 +58,7 @@ final class DownloadManager: NSObject {
 
     func cancel(_ episode: Episode) {
         let id = episode.episodeID
+        NewEpisodeNotifier.forget(id)
         ResumeDataStore.remove(episodeID: id)
         episode.downloadState = .notDownloaded
         progress[id] = nil
@@ -128,6 +130,7 @@ final class DownloadManager: NSObject {
         try? context.save()
         ResumeDataStore.remove(episodeID: id)
         processing.enqueue(episode)
+        NewEpisodeNotifier.downloaded(episode)
         prefetchPublisherTranscript(episode)
         if let url = episode.chaptersURL {
             Task { _ = try? await Chapters.published(episodeID: id, url: url) }
@@ -143,6 +146,7 @@ final class DownloadManager: NSObject {
 
     private func fail(_ id: String) {
         progress[id] = nil
+        NewEpisodeNotifier.forget(id)
         guard let episode = context.episode(withID: id) else { return }
         if episode.downloadState != .notDownloaded {  // not a user cancel
             episode.downloadState = .failed

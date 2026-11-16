@@ -95,9 +95,9 @@ struct DownloadsView: View {
                         }
                     }
                 } footer: {
-                    Text(isReordering
-                         ? "Drag episodes into the order Play All should play them."
-                         : "Using \(Format.bytes(Storage.bytesUsed)) of storage.")
+                    if isReordering {
+                        Text("Drag episodes into the order Play All should play them.")
+                    }
                 }
             }
         }
@@ -114,7 +114,7 @@ struct DownloadsView: View {
         .onChange(of: ready.count) { _, count in
             if count < 2 { editMode = .inactive }
         }
-        .tabTitle("Downloads")
+        .tabTitle("Downloads", detail: episodes.isEmpty ? nil : Format.bytes(Storage.bytesUsed))
     }
 
     /// Saves the new order for every ready episode, so later downloads go after them.

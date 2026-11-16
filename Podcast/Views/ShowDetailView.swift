@@ -80,7 +80,7 @@ struct ShowDetailView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(show.title)
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await feeds.refreshAll() }
+        .refreshable { await feeds.refresh(show) }
         .confirmationDialog(
             "Unsubscribe from \(show.title)?",
             isPresented: $confirmingUnsubscribe,

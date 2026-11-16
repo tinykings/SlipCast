@@ -898,9 +898,7 @@ final class PlayerController {
         let id = episode.episodeID
         Task {
             for url in urls {
-                guard let (data, _) = try? await URLSession.shared.data(from: url),
-                      let image = UIImage(data: data)
-                else { continue }
+                guard let image = await ArtworkCache.shared.image(for: url, pixelSize: 1024) else { continue }
                 guard self.episode?.episodeID == id else { return }
                 artwork = Self.makeArtwork(image)
                 updateNowPlaying()

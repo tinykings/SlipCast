@@ -106,10 +106,13 @@ struct EpisodeRow: View {
                         .lineLimit(3)
                 }
                 if let status {
+                    // Progress text changes many times a second. Fixed-width digits and a
+                    // constant two-line height stop it from rewrapping and resizing the row.
                     Text(status)
                         .font(.caption)
+                        .monospacedDigit()
                         .foregroundStyle(statusColor)
-                        .lineLimit(2)
+                        .lineLimit(2, reservesSpace: statusIsLive)
                 }
                 if isWaitingToPlay {
                     Label("Plays automatically when ready", systemImage: "play.circle.fill")
@@ -173,6 +176,15 @@ struct EpisodeRow: View {
         case (.downloaded, .processing): return processing.phaseLabel[id] ?? "Processing muted words \(percent(processing.progress[id]))"
         case (.downloaded, .failed): return episode.processingError ?? "Processing failed"
         default: return nil
+        }
+    }
+
+    /// The status is a progress readout that keeps changing.
+    private var statusIsLive: Bool {
+        switch (episode.downloadState, episode.processingState) {
+        case (.downloading, _): true
+        case (.downloaded, .processing): episode.requiresFiltering && !processing.isPaused
+        default: false
         }
     }
 

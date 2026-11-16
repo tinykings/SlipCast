@@ -138,11 +138,20 @@ final class FeedService {
 
     func refreshAll() async {
         guard !isRefreshing else { return }
-        isRefreshing = true
         lastRefreshAttempt = .now
+        await refresh((try? context.fetch(FetchDescriptor<Show>())) ?? [])
+    }
+
+    /// Checks just this show's feed, e.g. pulling to refresh on its page.
+    func refresh(_ show: Show) async {
+        await refresh([show])
+    }
+
+    private func refresh(_ shows: [Show]) async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
         defer { isRefreshing = false }
 
-        let shows = (try? context.fetch(FetchDescriptor<Show>())) ?? []
         var pending = shows.map { FeedRequest(url: $0.feedURL, etag: $0.feedETag, lastModified: $0.feedLastModified) }[...]
 
         let results = await withTaskGroup(of: (String, FeedFetchResult?).self) { group in

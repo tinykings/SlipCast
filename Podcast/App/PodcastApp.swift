@@ -22,6 +22,7 @@ struct SlipCastApp: App {
             switch phase {
             case .active:
                 env.processing.start()
+                NewEpisodeNotifier.appBecameActive()
                 env.cloudSync.refresh()
                 Task { await env.feeds.refreshIfStale() }
             case .background:

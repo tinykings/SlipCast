@@ -18,22 +18,9 @@ struct ArtworkView: View {
     }
 
     var body: some View {
-        artwork(from: urlStrings[...])
+        CachedArtwork(urls: urlStrings.compactMap(URL.init(string:)), size: size) { placeholder }
             .frame(width: size, height: size)
             .clipShape(.rect(cornerRadius: cornerRadius))
-    }
-
-    private func artwork(from candidates: ArraySlice<String>) -> AnyView {
-        guard let first = candidates.first else { return AnyView(placeholder) }
-        return AnyView(
-            AsyncImage(url: URL(string: first)) { phase in
-                switch phase {
-                case .success(let image): image.resizable().scaledToFill()
-                case .failure: artwork(from: candidates.dropFirst())
-                default: placeholder
-                }
-            }
-        )
     }
 
     private var placeholder: some View {
@@ -47,6 +34,52 @@ struct ArtworkView: View {
                 .font(.system(size: size * 0.4, weight: .semibold))
                 .foregroundStyle(Color.brandGlyph)
         }
+    }
+}
+
+/// Loads the first candidate that succeeds through `ArtworkCache`, so art persists across launches.
+private struct CachedArtwork<Placeholder: View>: View {
+    let urls: [URL]
+    let size: CGFloat
+    @ViewBuilder let placeholder: () -> Placeholder
+
+    @Environment(\.displayScale) private var displayScale
+    @State private var loaded: (urls: [URL], image: UIImage)?
+
+    private var pixelSize: Int { max(1, Int((size * displayScale).rounded(.up))) }
+
+    /// Memory hit for the current URLs, so cached art shows on the first frame without a flash.
+    private var image: UIImage? {
+        if let loaded, loaded.urls == urls { return loaded.image }
+        for url in urls {
+            if let image = ArtworkCache.shared.cachedImage(for: url, pixelSize: pixelSize) { return image }
+        }
+        return nil
+    }
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                placeholder()
+            }
+        }
+        .task(id: TaskKey(urls: urls, pixelSize: pixelSize)) {
+            if image != nil { return }
+            for url in urls {
+                if let image = await ArtworkCache.shared.image(for: url, pixelSize: pixelSize) {
+                    loaded = (urls, image)
+                    return
+                }
+                if Task.isCancelled { return }
+            }
+        }
+    }
+
+    private struct TaskKey: Equatable {
+        let urls: [URL]
+        let pixelSize: Int
     }
 }
 
@@ -221,13 +254,15 @@ extension View {
 
     /// Shows a tab's title on the left of the navigation bar, on the same row as its toolbar
     /// buttons, instead of a large title below them.
-    func tabTitle(_ title: String) -> some View {
-        modifier(TabTitle(title: title))
+    /// - Parameter detail: smaller secondary text after the title, e.g. storage used.
+    func tabTitle(_ title: String, detail: String? = nil) -> some View {
+        modifier(TabTitle(title: title, detail: detail))
     }
 }
 
 private struct TabTitle: ViewModifier {
     let title: String
+    let detail: String?
 
     func body(content: Content) -> some View {
         content
@@ -236,10 +271,18 @@ private struct TabTitle: ViewModifier {
             .toolbar(removing: .title)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Text(title)
-                        .font(.title2.bold())
-                        .fixedSize()
-                        .accessibilityAddTraits(.isHeader)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(title)
+                            .font(.title2.bold())
+                            .accessibilityAddTraits(.isHeader)
+                        if let detail {
+                            Text(detail)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    .fixedSize()
                 }
                 .sharedBackgroundVisibility(.hidden)
             }

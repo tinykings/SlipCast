@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Query(sort: \MutedTerm.createdAt, order: .reverse) private var terms: [MutedTerm]
@@ -11,6 +12,8 @@ struct SettingsView: View {
     @AppStorage(AppSettings.autoDownloadNewKey) private var autoDownloadNew = true
 
     @AppStorage(AppSettings.autoDeletePlayedKey) private var autoDeletePlayed = false
+    @AppStorage(AppSettings.notifyNewEpisodesKey) private var notifyNewEpisodes = false
+    @State private var notificationsDenied = false
 
     @State private var newTerm = ""
     @State private var rescanRequested = false
@@ -66,10 +69,29 @@ struct SettingsView: View {
                 Toggle("Auto-download new subscriptions", isOn: $autoDownloadNew)
                 Toggle("Auto-download on Wi-Fi only", isOn: $wifiOnly)
                 Toggle("Auto-delete played episodes", isOn: $autoDeletePlayed)
+                Toggle("Notify when new episodes download", isOn: $notifyNewEpisodes)
+                    .onChange(of: notifyNewEpisodes) { _, on in
+                        guard on else { return }
+                        Task {
+                            let allowed = await NewEpisodeNotifier.requestPermission()
+                            if !allowed {
+                                notifyNewEpisodes = false
+                                notificationsDenied = true
+                            }
+                        }
+                    }
+                if notificationsDenied {
+                    Button("Notifications are off for SlipCast. Open Settings") {
+                        if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                    .font(.footnote)
+                }
             } header: {
                 Text("Downloads")
             } footer: {
-                Text("Auto-delete removes downloads when episodes finish or you mark them as played. Their played status is kept, and you can download them again.")
+                Text("Auto-delete removes downloads when episodes finish or you mark them as played. Their played status is kept, and you can download them again. New-episode notifications cover automatic downloads that finish while SlipCast is closed, such as the overnight check while your phone charges.")
             }
 
             Section {
