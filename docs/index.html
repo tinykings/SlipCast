@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>SlipCast — Podcasts, on your terms</title>
+  <title>SlipCast – podcast player for iPhone</title>
   <meta name="description" content="A podcast player for iPhone with custom word filtering, on-device transcription, offline downloads, and iCloud sync. Read SlipCast’s privacy policy and get support.">
-  <meta property="og:title" content="SlipCast — Podcasts, on your terms">
-  <meta property="og:description" content="Keep the conversation. Skip the words you choose. A privacy-minded podcast player for iPhone.">
+  <meta property="og:title" content="SlipCast">
+  <meta property="og:description" content="A podcast player for iPhone that can skip words you choose, using on-device transcription.">
   <meta property="og:type" content="website">
   <link rel="icon" href="assets/app-icon.png" type="image/png">
   <link rel="stylesheet" href="styles.css">
@@ -16,83 +16,58 @@
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="wrap">
     <header class="site-header">
-      <a class="brand" href="./" aria-label="SlipCast home"><img src="assets/app-icon.png" width="36" height="36" alt="">SlipCast</a>
+      <a class="brand" href="./">SlipCast</a>
       <nav aria-label="Main navigation">
         <a href="#features">Features</a>
         <a href="#privacy">Privacy</a>
         <a href="#support">Support</a>
       </nav>
     </header>
+
     <main id="main">
-      <section class="hero" aria-labelledby="hero-title">
-        <div class="hero-copy">
-          <p class="eyebrow">A more personal podcast player</p>
-          <h1 id="hero-title">Podcasts,<br>on <em>your</em> terms.</h1>
-          <p class="intro">Keep the conversation. Skip the words you choose. SlipCast brings custom word filtering and on-device transcription to your podcast routine.</p>
-          <div class="buttons">
-            <a class="button primary" href="#features">Meet SlipCast <span aria-hidden="true">↓</span></a>
-            <a class="button secondary" href="https://github.com/tinykings/SlipCast">View source <span aria-hidden="true">↗</span></a>
-          </div>
-          <p class="requirements">For iPhone · Requires iOS 26.1 or later</p>
-        </div>
-        <div class="visual" aria-hidden="true">
-          <div class="visual-top"><span class="status-dot"></span> YOUR WORDS. YOUR RULES.</div>
-          <div class="waveform">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-          </div>
-          <div class="filter-label"><span>✓</span> Custom word filtering</div>
-          <div class="visual-bottom"><span>Made for listening.</span><span>Processed on device.</span></div>
-        </div>
+      <section class="intro" aria-labelledby="title">
+        <img class="icon" src="assets/app-icon.png" width="88" height="88" alt="SlipCast app icon">
+        <h1 id="title">SlipCast</h1>
+        <p class="lede">A podcast player for iPhone that can skip the words you’d rather not hear. You make a list, turn it on for the shows you want, and SlipCast transcribes episodes on your phone and cuts those moments out of playback.</p>
+        <p class="meta">For iPhone, iOS 26.1 or later · <a href="https://github.com/tinykings/SlipCast">Source on GitHub</a></p>
+
+        <figure class="example">
+          <blockquote>
+            <p>“…so we drove out there at six in the morning, and the whole place was <span class="cut"><span class="sr">skipped word</span></span> closed. Nobody had told us.”</p>
+          </blockquote>
+          <figcaption>Words on your list are skipped during playback, with adjustable padding on either side.</figcaption>
+        </figure>
       </section>
 
-      <section id="features" class="section" aria-labelledby="features-title">
-        <p class="eyebrow">Less friction. More listening.</p>
-        <h2 id="features-title">Your favorites, with a little more control.</h2>
-        <div class="features">
-          <article class="feature featured">
-            <span class="number" aria-hidden="true">01 / FILTER</span>
-            <h3>Choose what you don’t hear.</h3>
-            <p>Add your own words and phrases, then enable filtering for individual shows. SlipCast finds matching sections and skips them during playback. Adjust the padding around each match to catch the edges.</p>
-          </article>
-          <article class="feature">
-            <span class="number" aria-hidden="true">02 / READ ALONG</span>
-            <h3>Follow every conversation.</h3>
-            <p>Read along with a publisher’s transcript when available, or generate one on a supported device. Tap the transcript to jump to that moment in the episode.</p>
-          </article>
-          <article class="feature">
-            <span class="number" aria-hidden="true">03 / DISCOVER</span>
-            <h3>Find your next favorite.</h3>
-            <p>Search Apple’s podcast directory, browse charts, or add a show directly with its RSS feed URL. Keep the shows you follow together in your library.</p>
-          </article>
-          <article class="feature">
-            <span class="number" aria-hidden="true">04 / TAKE IT WITH YOU</span>
-            <h3>Ready when you are.</h3>
-            <p>Download episodes for offline listening. Automatically download new episodes, restrict automatic downloads to Wi-Fi, and optionally remove played downloads.</p>
-          </article>
-          <article class="feature">
-            <span class="number" aria-hidden="true">05 / MAKE IT YOURS</span>
-            <h3>A player that fits your pace.</h3>
-            <p>Change playback speed, build an Up Next queue, set a sleep timer, and navigate chapters when provided. Jump between detected music sections, which can help you find breaks.</p>
-          </article>
-          <article class="feature">
-            <span class="number" aria-hidden="true">06 / STAY IN SYNC</span>
-            <h3>Pick up where you left off.</h3>
-            <p>Subscriptions, played history, playback positions, muted words, and supported settings sync through your own iCloud account. Audio and generated transcripts stay on each device.</p>
-          </article>
-        </div>
-        <p class="note">Filtering and generated transcripts require supported Apple Speech hardware and languages. Filtered episodes need to finish processing before playback. Automated detection can miss words or filter unintended audio; it is not a guarantee that an episode is free of unwanted content.</p>
+      <section id="features" aria-labelledby="features-title">
+        <h2 id="features-title">What it does</h2>
+        <dl class="features">
+          <dt>Word filtering</dt>
+          <dd>Add your own words and phrases and enable filtering per show. SlipCast finds matches and skips them while you listen. You can widen the padding around each match if the edges come through.</dd>
+
+          <dt>Transcripts</dt>
+          <dd>Read along with the publisher’s transcript when there is one, or generate your own on a supported device. Tap a line to jump to that point in the episode.</dd>
+
+          <dt>Finding shows</dt>
+          <dd>Search Apple’s podcast directory, browse the charts, or paste in an RSS feed URL.</dd>
+
+          <dt>Downloads</dt>
+          <dd>Save episodes for offline listening. New episodes can download automatically, Wi‑Fi only if you like, and played ones can be cleaned up for you.</dd>
+
+          <dt>Playback</dt>
+          <dd>Playback speed, an Up Next queue, a sleep timer, and chapters when the show provides them. SlipCast also detects music sections, so you can jump between them to find segment breaks.</dd>
+
+          <dt>iCloud sync</dt>
+          <dd>Subscriptions, played history, playback positions, muted words, and most settings sync through your own iCloud account. Downloads and generated transcripts stay on each device.</dd>
+        </dl>
+
+        <p class="fine">Filtering and generated transcripts need Apple Speech support for your device and language, and an episode has to finish processing before you can play it filtered. Detection isn’t perfect: it can miss a word or clip something it shouldn’t. Please don’t rely on it to make an episode safe for kids.</p>
       </section>
 
-      <aside class="privacy-banner" aria-label="Privacy overview">
-        <div><p class="eyebrow">Your listening is yours.</p><h2>On-device processing.<br>No advertising or tracking SDKs.</h2></div>
-        <a class="button secondary" href="#privacy">Read the privacy policy <span aria-hidden="true">↓</span></a>
-      </aside>
-
-      <section id="privacy" class="section policy" aria-labelledby="privacy-title">
-        <p class="eyebrow">The details, in plain language</p>
+      <section id="privacy" class="policy" aria-labelledby="privacy-title">
         <h2 id="privacy-title">Privacy Policy</h2>
-        <p class="note">Effective November 17, 2026</p>
-        <p class="summary"><strong>In short:</strong> SlipCast has no developer-operated backend, advertising, or analytics SDKs. Audio analysis runs on your device. Your app data stays on your device or syncs through your own iCloud account. Using the podcast directory and downloading content involves direct requests to Apple and podcast hosting services.</p>
+        <p class="fine">Effective November 17, 2026</p>
+        <p class="summary"><strong>Short version:</strong> SlipCast has no developer-operated backend, advertising, or analytics SDKs. Audio analysis runs on your device. Your app data stays on your device or syncs through your own iCloud account. Using the podcast directory and downloading content involves direct requests to Apple and podcast hosting services.</p>
         <p>This policy covers the SlipCast iPhone app and this informational website. SlipCast is developed by tinykings. You can inspect the app’s behavior in its <a href="https://github.com/tinykings/SlipCast">source code</a>.</p>
 
         <h3>Information collected by the developer</h3>
@@ -140,17 +115,14 @@
         <p>For privacy questions, contact the developer through <a href="https://github.com/tinykings/SlipCast/issues">GitHub Issues</a>. Issues are public, so please do not include private information.</p>
       </section>
 
-      <section id="support" class="section support" aria-labelledby="support-title">
-        <p class="eyebrow">A little help?</p>
-        <h2 id="support-title">Support &amp; feedback</h2>
-        <p>Found a bug or have an idea? Open an issue with your iPhone model, iOS version, and a description of what happened. Please leave out personal information.</p>
-        <a class="button primary" href="https://github.com/tinykings/SlipCast/issues">Get support <span aria-hidden="true">↗</span></a>
+      <section id="support" aria-labelledby="support-title">
+        <h2 id="support-title">Support</h2>
+        <p>Bug reports and feature requests go in <a href="https://github.com/tinykings/SlipCast/issues">GitHub Issues</a>. It helps to include your iPhone model, iOS version, and what you were doing when it went wrong. Issues are public, so leave out anything personal.</p>
       </section>
     </main>
+
     <footer>
-      <a class="brand" href="./">SlipCast</a>
-      <p>Made for listening. Built with privacy in mind.</p>
-      <div><a href="#privacy">Privacy Policy</a><a href="https://github.com/tinykings/SlipCast">Source code</a></div>
+      <p><a href="#privacy">Privacy Policy</a> · <a href="https://github.com/tinykings/SlipCast">Source code</a> · <a href="https://github.com/tinykings/SlipCast/issues">Issues</a></p>
       <p class="legal">Apple, iPhone, and iCloud are trademarks of Apple Inc. SlipCast is not affiliated with or endorsed by Apple or the podcasts in its directory.</p>
     </footer>
   </div>
