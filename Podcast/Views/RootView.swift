@@ -1,8 +1,16 @@
+import SwiftData
 import SwiftUI
 
 struct RootView: View {
     @Environment(PlayerController.self) private var player
     @State private var showingPlayer = false
+    /// `isInProgress` depends on the show, so it can't go in the predicate.
+    @Query(filter: #Predicate<Episode> { $0.downloadStateRaw != "notDownloaded" })
+    private var downloadedEpisodes: [Episode]
+
+    private var inProgressCount: Int {
+        downloadedEpisodes.count(where: \.isInProgress)
+    }
 
     var body: some View {
         tabs
@@ -18,6 +26,7 @@ struct RootView: View {
                 NavigationStack { DownloadsView() }
                     .safeAreaInset(edge: .bottom) { miniPlayer }
             }
+            .badge(inProgressCount)
             Tab("Settings", systemImage: "gearshape") {
                 NavigationStack { SettingsView() }
                     .safeAreaInset(edge: .bottom) { miniPlayer }
