@@ -16,7 +16,10 @@ let package = Package(
         .target(name: "OverlapRuntime", dependencies: [
             .product(name: "onnxruntime-macos", package: "onnxruntime-libs", condition: .when(platforms: [.macOS])),
             .product(name: "onnxruntime-ios", package: "onnxruntime-libs", condition: .when(platforms: [.iOS]))
-        ], linkerSettings: [.linkedLibrary("c++"), .linkedFramework("Foundation"), .linkedFramework("CoreML")]),
+        ],
+        // onnxruntime's prebuilt framework ships an umbrella header that omits most of its headers.
+        cSettings: [.unsafeFlags(["-Wno-incomplete-umbrella"])],
+        linkerSettings: [.linkedLibrary("c++"), .linkedFramework("Foundation"), .linkedFramework("CoreML")]),
         .target(name: "AudioDetection", dependencies: ["OverlapRuntime"], resources: [.copy("Models")]),
         // Listens for muted words inside overlapping speech (~5 MB model). Linked into the app.
         .target(

@@ -40,8 +40,10 @@ final class PlayerController {
     /// Seconds of the episode scanned for muted words. `.infinity` once fully scanned.
     private(set) var scannedThrough: Double = 0
     private(set) var scanError: String?
-    /// Episodes queued by Play All, played in order after the current one.
+    /// Episodes waiting to play right after the current one, ahead of the Downloads list.
     private(set) var upNext: [String] = []
+    /// The next episode is loading after one finished, so an empty player isn't closed yet.
+    private(set) var isAdvancing = false
     /// Still downloading or filtering; starts on its own as soon as it can play.
     private(set) var playWhenReadyID: String?
     /// Called when playback pauses, stops or changes episode, so the position can be synced.
@@ -173,15 +175,7 @@ final class PlayerController {
         }
     }
 
-    /// Plays the episodes in order, one after another.
-    func playAll(_ episodes: [Episode]) {
-        let playable = episodes.filter(Self.canPlay)
-        guard let first = playable.first else { return }
-        upNext = playable.dropFirst().map(\.episodeID)
-        Task { await load(first) }
-    }
-
-    /// Plays one episode, replacing any Play All queue.
+    /// Plays one episode, replacing any queued episodes.
     func play(_ episode: Episode) async {
         upNext = []
         await load(episode)
@@ -190,6 +184,7 @@ final class PlayerController {
     /// `reload` rebuilds the current episode's item instead of just resuming it; `autoplay`
     /// false leaves it paused at the saved position.
     private func load(_ episode: Episode, reload: Bool = false, autoplay: Bool = true) async {
+        defer { isAdvancing = false }
         guard Self.canPlay(episode) else { return }
         if isCurrent(episode) && !reload {
             resume()
@@ -757,6 +752,8 @@ final class PlayerController {
         guard let episode else { return }
         let sleepsNow = sleepTimer == .endOfEpisode
         let timer = sleepTimer, remaining = sleepRemaining
+        // Found before the finished episode can be deleted and drop out of the list.
+        let nextDownload = AppSettings.autoPlayNext ? nextInDownloads(after: episode) : nil
         episode.isPlayed = true
         episode.playbackPosition = 0
         currentTime = 0
@@ -764,7 +761,7 @@ final class PlayerController {
         isWaitingForScan = false
         try? context.save()
         if AppSettings.autoDeletePlayed {
-            // Release the finished file before deleting it, keeping Play All's remaining queue.
+            // Release the finished file before deleting it, keeping the remaining queue.
             let remainingQueue = upNext
             stop()
             downloads.deleteDownload(episode)
@@ -777,19 +774,42 @@ final class PlayerController {
         }
         if sleepsNow {
             setSleepTimer(nil)  // the queue is kept for later
-        } else {
-            playNextInQueue()
+        } else if playNextInQueue(orElse: nextDownload) {
+            return
+        }
+        // Nothing plays next, so close the player instead of leaving the finished episode loaded.
+        if self.episode != nil {
+            let remainingQueue = upNext
+            stop()
+            upNext = remainingQueue
         }
     }
 
-    private func playNextInQueue() {
+    /// Plays the first playable queued episode, falling back to `fallback`. Returns whether
+    /// anything started.
+    @discardableResult
+    private func playNextInQueue(orElse fallback: Episode? = nil) -> Bool {
         while let id = upNext.first {
             upNext.removeFirst()
             if let next = context.episode(withID: id), Self.canPlay(next) {
+                isAdvancing = true
                 Task { await load(next) }
-                return
+                return true
             }
         }
+        if let fallback, Self.canPlay(fallback) {
+            isAdvancing = true
+            Task { await load(fallback) }
+            return true
+        }
+        return false
+    }
+
+    /// The next unplayed, playable episode below `episode` in the Downloads list.
+    private func nextInDownloads(after episode: Episode) -> Episode? {
+        let list = context.readyDownloads()
+        guard let index = list.firstIndex(where: { $0.episodeID == episode.episodeID }) else { return nil }
+        return list[(index + 1)...].first { !$0.isPlayed && Self.canPlay($0) }
     }
 
     // MARK: - Speed
@@ -802,17 +822,6 @@ final class PlayerController {
             show.playbackRate = Double(newRate)
             try? context.save()
         }
-    }
-
-    // MARK: - Up next
-
-    /// Re-sorts a Play All queue after the user reorders the list it came from.
-    func reorderUpNext(_ order: [String]) {
-        guard upNext.count > 1 else { return }
-        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-        upNext = upNext.enumerated()
-            .sorted { (rank[$0.element] ?? Int.max, $0.offset) < (rank[$1.element] ?? Int.max, $1.offset) }
-            .map(\.element)
     }
 
     // MARK: - Chapters
@@ -1005,7 +1014,8 @@ final class PlayerController {
                 .flatMap(AVAudioSession.InterruptionType.init(rawValue:))
             let options = (info?[AVAudioSessionInterruptionOptionKey] as? UInt)
                 .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
-            let wasSuspended = info?[AVAudioSessionInterruptionWasSuspendedKey] as? Bool ?? false
+            let wasSuspended = (info?[AVAudioSessionInterruptionReasonKey] as? UInt)
+                .flatMap(AVAudioSession.InterruptionReason.init(rawValue:)) == .appWasSuspended
             MainActor.assumeIsolated {
                 self?.handleInterruption(type, options: options, wasSuspended: wasSuspended)
             }

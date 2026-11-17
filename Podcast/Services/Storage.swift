@@ -61,6 +61,7 @@ nonisolated enum AppSettings {
     static let autoDeletePlayedKey = "autoDeletePlayedEpisodes"
     static let autoDownloadNewKey = "autoDownloadNewSubscriptions"
     static let playbackRateKey = "lastPlaybackRate"
+    static let autoPlayNextKey = "autoPlayNextDownload"
     /// Per device, so it isn't one of the settings CloudSync backs up.
     static let notifyNewEpisodesKey = "notifyNewEpisodes"
 
@@ -72,6 +73,7 @@ nonisolated enum AppSettings {
             autoDownloadNewKey: true,
             autoDeletePlayedKey: false,
             playbackRateKey: 1.0,
+            autoPlayNextKey: true,
             notifyNewEpisodesKey: false,
         ])
     }
@@ -82,6 +84,8 @@ nonisolated enum AppSettings {
     static var autoDeletePlayed: Bool { UserDefaults.standard.bool(forKey: autoDeletePlayedKey) }
     static var autoDownloadNew: Bool { UserDefaults.standard.bool(forKey: autoDownloadNewKey) }
     static var notifyNewEpisodes: Bool { UserDefaults.standard.bool(forKey: notifyNewEpisodesKey) }
+    /// When an episode finishes, play the next one in the Downloads list.
+    static var autoPlayNext: Bool { UserDefaults.standard.bool(forKey: autoPlayNextKey) }
     /// Speed for shows that don't have their own yet.
     static var playbackRate: Double {
         get { UserDefaults.standard.double(forKey: playbackRateKey) }

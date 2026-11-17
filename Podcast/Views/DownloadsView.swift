@@ -13,7 +13,7 @@ struct DownloadsView: View {
     @Environment(DownloadManager.self) private var downloads
     @Environment(PlayerController.self) private var player
     @Environment(\.modelContext) private var context
-    @State private var editMode = EditMode.inactive
+    @AppStorage(AppSettings.autoPlayNextKey) private var autoPlayNext = true
 
     private var inProgress: [Episode] {
         episodes.filter(\.isInProgress)
@@ -23,22 +23,7 @@ struct DownloadsView: View {
         episodes.filter { $0.downloadState == .failed || ($0.requiresFiltering && $0.processingState == .failed) }
     }
 
-    /// Anything the user hasn't placed yet (newest published first), then the user's order.
-    private var ready: [Episode] {
-        let ready = episodes.filter(\.isReady)
-        let placed = ready.filter { $0.queueOrder != nil }.sorted { ($0.queueOrder ?? 0) < ($1.queueOrder ?? 0) }
-        let unplaced = ready.filter { $0.queueOrder == nil }.sorted {
-            ($0.pubDate ?? $0.downloadedAt ?? .distantPast) > ($1.pubDate ?? $1.downloadedAt ?? .distantPast)
-        }
-        return unplaced + placed
-    }
-
-    /// Play All follows the order of the ready list.
-    private var playAllEpisodes: [Episode] {
-        ready.filter(PlayerController.canPlay)
-    }
-
-    private var isReordering: Bool { editMode.isEditing }
+    private var ready: [Episode] { Episode.downloadsOrder(episodes) }
 
     var body: some View {
         List {
@@ -74,32 +59,22 @@ struct DownloadsView: View {
                     ForEach(ready) { row($0) }
                         .onMove(perform: move)
                 } header: {
-                    HStack(spacing: 16) {
-                        Spacer()
+                    HStack(spacing: 12) {
+                        Toggle("Auto play next episode", isOn: $autoPlayNext)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                        Text("Auto play next episode")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .accessibilityHidden(true)
+                        Spacer(minLength: 8)
                         if ready.count > 1 {
-                            Button {
-                                withAnimation { editMode = isReordering ? .inactive : .active }
-                            } label: {
-                                Label(isReordering ? "Done" : "Reorder",
-                                      systemImage: isReordering ? "checkmark" : "arrow.up.arrow.down")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                            .textCase(nil)
-                        }
-                        if !playAllEpisodes.isEmpty && !isReordering {
-                            Button {
-                                player.playAll(playAllEpisodes)
-                            } label: {
-                                Label("Play All", systemImage: "play.fill")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                            .textCase(nil)
+                            Text("Hold and drag to reorder episodes")
+                                .font(.caption)
+                                .multilineTextAlignment(.trailing)
                         }
                     }
-                } footer: {
-                    if isReordering {
-                        Text("Drag episodes into the order Play All should play them.")
-                    }
+                    .textCase(nil)
                 }
             }
         }
@@ -112,10 +87,6 @@ struct DownloadsView: View {
                 )
             }
         }
-        .environment(\.editMode, $editMode)
-        .onChange(of: ready.count) { _, count in
-            if count < 2 { editMode = .inactive }
-        }
         .tabTitle("Downloads", detail: episodes.isEmpty ? nil : Format.bytes(Storage.bytesUsed))
     }
 
@@ -127,7 +98,6 @@ struct DownloadsView: View {
             episode.queueOrder = Double(index)
         }
         try? context.save()
-        player.reorderUpNext(ordered.map(\.episodeID))
     }
 
     private func row(_ episode: Episode) -> some View {

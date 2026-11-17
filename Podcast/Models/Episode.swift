@@ -90,6 +90,17 @@ final class Episode {
     var requiresFiltering: Bool { show?.filteringEnabled == true }
 
     /// Downloaded; filtered shows also require both processing passes.
+    /// The Downloads list order for ready episodes: anything the user hasn't placed yet
+    /// (newest published first), then the user's order.
+    static func downloadsOrder(_ episodes: [Episode]) -> [Episode] {
+        let ready = episodes.filter(\.isReady)
+        let placed = ready.filter { $0.queueOrder != nil }.sorted { ($0.queueOrder ?? 0) < ($1.queueOrder ?? 0) }
+        let unplaced = ready.filter { $0.queueOrder == nil }.sorted {
+            ($0.pubDate ?? $0.downloadedAt ?? .distantPast) > ($1.pubDate ?? $1.downloadedAt ?? .distantPast)
+        }
+        return unplaced + placed
+    }
+
     var isReady: Bool {
         downloadState == .downloaded && (!requiresFiltering || processingState == .ready)
     }
@@ -113,6 +124,12 @@ final class Episode {
 }
 
 extension ModelContext {
+    /// Ready-to-play downloads in the order the Downloads list shows them.
+    func readyDownloads() -> [Episode] {
+        let descriptor = FetchDescriptor<Episode>(predicate: #Predicate { $0.downloadStateRaw != "notDownloaded" })
+        return Episode.downloadsOrder((try? fetch(descriptor)) ?? [])
+    }
+
     func episode(withID id: String) -> Episode? {
         var descriptor = FetchDescriptor<Episode>(predicate: #Predicate { $0.episodeID == id })
         descriptor.fetchLimit = 1

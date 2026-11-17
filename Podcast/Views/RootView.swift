@@ -35,6 +35,10 @@ struct RootView: View {
         .sheet(isPresented: $showingPlayer) {
             PlayerView()
         }
+        // Close the full player once playback ends with nothing to play next.
+        .onChange(of: player.episode == nil && !player.isAdvancing) { _, isEmpty in
+            if isEmpty { showingPlayer = false }
+        }
     }
 
     /// Sits above the tab bar. The system bottom accessory is too short and fits only one pill.
