@@ -53,17 +53,19 @@ final class PlayerController {
     /// Chapters for the current episode, from the file or the feed. Empty when it has none.
     private(set) var chapters: [Chapter] = []
     var currentChapter: Chapter? { chapters.last { $0.start <= currentTime + 0.25 } }
+    /// The chapter after this one, if it starts in the part that can be played.
+    var nextChapter: Chapter? {
+        chapters.first { $0.start > currentTime + 0.25 && $0.start <= playableLimit }
+    }
+    /// Where going back lands: the start of this chapter, or the one before when this chapter
+    /// started only a few seconds ago.
+    var previousChapter: Chapter? { chapters.last { $0.start < currentTime - 3 } }
 
     /// Where music plays without speech, often the start or end of an ad break. Found from the
     /// finished transcript, so it's empty until there is one.
     private(set) var musicSections: [MusicSection] = []
     @ObservationIgnored private var musicTask: Task<Void, Never>?
     @ObservationIgnored private var musicLoaded = false
-    var nextMusicStart: Double? {
-        musicSections.first { $0.start > currentTime + 0.5 && $0.start <= playableLimit }?.start
-    }
-    /// The music section before this one (or the start of this one, once a few seconds in).
-    var previousMusicStart: Double? { musicSections.last { $0.start < currentTime - 3 }?.start }
 
     /// What the sleep timer is set to; nil when it's off.
     private(set) var sleepTimer: SleepTimer?
@@ -73,7 +75,7 @@ final class PlayerController {
     /// The volume fades out over this many seconds before the sleep timer pauses.
     private let sleepFade = 8.0
 
-    /// Set with `setRate(_:)`, which also remembers it for the show.
+    /// Set with `setRate(_:)`, which also remembers it for this show or for all shows.
     private(set) var rate: Float = 1 {
         didSet {
             player.defaultRate = rate
@@ -254,7 +256,12 @@ final class PlayerController {
         lastSavedPosition = start
 
         isPlaying = autoplay
-        if autoplay { updatePlaybackGate() } else { updateNowPlaying() }
+        if autoplay {
+            armSleepTimer()
+            updatePlaybackGate()
+        } else {
+            updateNowPlaying()
+        }
         loadArtwork(for: episode)
     }
 
@@ -264,6 +271,7 @@ final class PlayerController {
             return
         }
         isPlaying = true
+        armSleepTimer()
         // After an interruption the player can be left waiting rather than paused; a play tap
         // should restart it either way.
         updatePlaybackGate(force: true)
@@ -814,14 +822,47 @@ final class PlayerController {
 
     // MARK: - Speed
 
-    /// Changes the speed and remembers it for this show and as the default for others.
+    /// Changes the speed and remembers it for this show, or as the default for all shows,
+    /// depending on `settingsScope`.
     func setRate(_ newRate: Float) {
         rate = newRate
-        AppSettings.playbackRate = Double(newRate)
-        if let show = episode?.show, show.playbackRate != Double(newRate) {
+        if let show = episode?.show, show.hasOwnPlaybackSettings {
+            guard show.playbackRate != Double(newRate) else { return }
             show.playbackRate = Double(newRate)
             try? context.save()
+        } else {
+            AppSettings.playbackRate = Double(newRate)
         }
+    }
+
+    // MARK: - Settings scope
+
+    /// Whether the player's speed and sleep timer settings belong to the current show or are
+    /// the defaults for all shows.
+    var settingsScope: PlaybackSettingsScope {
+        episode?.show?.hasOwnPlaybackSettings == true ? .thisShow : .allShows
+    }
+
+    /// Switching to this show copies the current speed and sleep timer into it. Switching to all
+    /// shows drops the show's own settings and plays with the defaults.
+    func setSettingsScope(_ scope: PlaybackSettingsScope) {
+        guard let show = episode?.show, scope != settingsScope else { return }
+        switch scope {
+        case .thisShow:
+            show.playbackRate = Double(rate)
+            show.sleepTimerSetting = SleepTimer.storedValue(sleepTimer)
+        case .allShows:
+            show.playbackRate = nil
+            show.sleepTimerSetting = nil
+            rate = Float(AppSettings.playbackRate)
+            let preferred = SleepTimer(storedValue: AppSettings.sleepTimer)
+            if !Self.isSameKind(preferred, sleepTimer) { setSleepTimer(preferred) }
+        }
+        try? context.save()
+    }
+
+    private static func isSameKind(_ a: SleepTimer?, _ b: SleepTimer?) -> Bool {
+        SleepTimer.storedValue(a) == SleepTimer.storedValue(b)
     }
 
     // MARK: - Chapters
@@ -843,16 +884,15 @@ final class PlayerController {
         seek(to: chapter.start)
     }
 
+    func skipToNextChapter() {
+        if let nextChapter { seek(to: nextChapter) }
+    }
+
+    func skipToPreviousChapter() {
+        if let previousChapter { seek(to: previousChapter) }
+    }
+
     // MARK: - Music sections
-
-    /// Jumps to where music next starts: with luck, the end of an ad.
-    func skipToNextMusic() {
-        if let start = nextMusicStart { seek(to: start) }
-    }
-
-    func skipToPreviousMusic() {
-        if let start = previousMusicStart { seek(to: start) }
-    }
 
     private func withMusic(_ lines: [TranscriptLine]) -> [TranscriptLine] {
         TranscriptLine.adding(musicSections, to: lines)
@@ -898,6 +938,28 @@ final class PlayerController {
         if case .minutes(let minutes) = timer { sleepRemaining = Double(minutes) * 60 } else { sleepRemaining = 0 }
         lastSleepTick = nil
         player.volume = 1
+    }
+
+    /// Sets the sleep timer from the player's settings and remembers it for this show, or as the
+    /// default for all shows, depending on `settingsScope`. It's set again each time playback
+    /// starts with no timer running.
+    func chooseSleepTimer(_ timer: SleepTimer?) {
+        if !Self.isSameKind(timer, sleepTimer) { setSleepTimer(timer) }
+        let stored = SleepTimer.storedValue(timer)
+        if let show = episode?.show, show.hasOwnPlaybackSettings {
+            guard show.sleepTimerSetting != stored else { return }
+            show.sleepTimerSetting = stored
+            try? context.save()
+        } else {
+            AppSettings.sleepTimer = stored
+        }
+    }
+
+    /// Starts the remembered sleep timer for this show (or the default) if none is running.
+    private func armSleepTimer() {
+        guard sleepTimer == nil else { return }
+        let stored = episode?.show?.sleepTimerSetting ?? AppSettings.sleepTimer
+        if let timer = SleepTimer(storedValue: stored) { setSleepTimer(timer) }
     }
 
     /// Counts a timed sleep timer down by the listening time since the last tick, fading out at the
@@ -1162,4 +1224,25 @@ enum PublisherTranscriptState: Equatable {
 enum SleepTimer: Hashable {
     case minutes(Int)
     case endOfEpisode
+
+    /// Stored as minutes, -1 for the end of the episode, or 0 for off.
+    static func storedValue(_ timer: SleepTimer?) -> Int {
+        switch timer {
+        case nil: 0
+        case .minutes(let minutes): minutes
+        case .endOfEpisode: -1
+        }
+    }
+
+    init?(storedValue: Int) {
+        switch storedValue {
+        case -1: self = .endOfEpisode
+        case 1...: self = .minutes(storedValue)
+        default: return nil
+        }
+    }
+}
+
+enum PlaybackSettingsScope: Hashable {
+    case thisShow, allShows
 }

@@ -18,8 +18,11 @@ final class Show {
     var directoryArtworkCheckedAt: Date?
     var language: String?
     var filteringEnabled: Bool = false
-    /// The speed last chosen while playing this show; nil plays at the last speed chosen anywhere.
+    /// This show's own speed; nil plays at the default for all shows. Set together with
+    /// `sleepTimerSetting` when the player's settings are switched to "This Show".
     var playbackRate: Double?
+    /// This show's own sleep timer, as `SleepTimer.storedValue`; nil uses the default for all shows.
+    var sleepTimerSetting: Int?
     /// The feed's show-level `itunes:explicit` tag. Filtering starts on for these.
     var isExplicit: Bool = false
     var autoDownload: Bool
@@ -61,6 +64,9 @@ final class Show {
     var isFullyPlayed: Bool {
         !episodes.isEmpty && episodes.allSatisfy(\.isPlayed)
     }
+
+    /// Whether this show has its own speed and sleep timer instead of the defaults.
+    var hasOwnPlaybackSettings: Bool { playbackRate != nil || sleepTimerSetting != nil }
 
     /// Artwork URLs to try, best first.
     var artworkCandidates: [String?] { [artworkURL, directoryArtworkURL] }
