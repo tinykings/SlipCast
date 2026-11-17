@@ -7,7 +7,7 @@ import UIKit
 /// `URLCache` to keep, so `AsyncImage` re-downloaded every poster on each launch.
 /// Images are downsampled once to `storedPixelSize`, written to Caches/Artwork, and decoded
 /// per display size into a memory cache.
-final class ArtworkCache: @unchecked Sendable {
+nonisolated final class ArtworkCache: @unchecked Sendable {
     static let shared = ArtworkCache()
 
     private static let storedPixelSize = 1024
