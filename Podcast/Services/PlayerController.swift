@@ -5,6 +5,9 @@ import MediaPlayer
 import Observation
 import SwiftData
 import UIKit
+import os
+
+nonisolated private let playbackLog = Logger(subsystem: "com.tinyking.slipcast", category: "Playback")
 
 /// Plays downloaded episodes and silences muted words with a real-time audio tap. The audio file
 /// is never modified; changing the mute list just updates the tap, even mid-episode.
@@ -85,7 +88,8 @@ final class PlayerController {
         return max(0, min(duration, scannedThrough - safetyMargin))
     }
 
-    private let player = AVPlayer()
+    /// Replaced only when the system resets its media services, which leaves the old one dead.
+    @ObservationIgnored private var player = AVPlayer()
     @ObservationIgnored private let context: ModelContext
     @ObservationIgnored private let processing: ProcessingQueue
     @ObservationIgnored private let downloads: DownloadManager
@@ -106,6 +110,7 @@ final class PlayerController {
     @ObservationIgnored private let keepAlive = SilentKeepAlive()
     @ObservationIgnored private var playWhenReadyTimer: Timer?
     @ObservationIgnored private var interruptionObserver: NSObjectProtocol?
+    @ObservationIgnored private var mediaResetObserver: NSObjectProtocol?
     /// Playback was going when an interruption (Siri, announcements, calls) began, so it should
     /// pick back up if the system says to resume.
     @ObservationIgnored private var resumeAfterInterruption = false
@@ -120,17 +125,29 @@ final class PlayerController {
         self.context = context
         self.processing = processing
         self.downloads = downloads
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, policy: .longFormAudio)
+        Self.configureAudioSession()
+        addTimeObserver()
+        processing.onLiveUpdate = { [weak self] id in self?.scanProgressed(id) }
+        processing.onFinished = { [weak self] id in self?.scanFinished(id) }
+        configureRemoteCommands()
+        observeInterruptions()
+    }
+
+    private static func configureAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, policy: .longFormAudio)
+        } catch {
+            playbackLog.error("Couldn't set the audio session category: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func addTimeObserver() {
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
             MainActor.assumeIsolated { self?.tick(time.seconds) }
         }
-        processing.onLiveUpdate = { [weak self] id in self?.scanProgressed(id) }
-        processing.onFinished = { [weak self] id in self?.scanFinished(id) }
-        configureRemoteCommands()
-        observeInterruptions()
     }
 
     func isCurrent(_ episode: Episode) -> Bool {
@@ -170,9 +187,11 @@ final class PlayerController {
         await load(episode)
     }
 
-    private func load(_ episode: Episode) async {
+    /// `reload` rebuilds the current episode's item instead of just resuming it; `autoplay`
+    /// false leaves it paused at the saved position.
+    private func load(_ episode: Episode, reload: Bool = false, autoplay: Bool = true) async {
         guard Self.canPlay(episode) else { return }
-        if isCurrent(episode) {
+        if isCurrent(episode) && !reload {
             resume()
             return
         }
@@ -239,15 +258,20 @@ final class PlayerController {
         currentTime = start
         lastSavedPosition = start
 
-        isPlaying = true
-        updatePlaybackGate()
+        isPlaying = autoplay
+        if autoplay { updatePlaybackGate() } else { updateNowPlaying() }
         loadArtwork(for: episode)
     }
 
     func resume() {
-        guard player.currentItem != nil else { return }
+        guard player.currentItem != nil else {
+            playbackLog.notice("Play tapped with no item loaded")
+            return
+        }
         isPlaying = true
-        updatePlaybackGate()
+        // After an interruption the player can be left waiting rather than paused; a play tap
+        // should restart it either way.
+        updatePlaybackGate(force: true)
     }
 
     func pause() {
@@ -557,7 +581,8 @@ final class PlayerController {
 
     /// Holds a filtered episode until its scan is complete, otherwise starts the player if the
     /// user wants it playing.
-    private func updatePlaybackGate() {
+    /// `force` starts the player whenever it isn't actually playing, not only when it's paused.
+    private func updatePlaybackGate(force: Bool = false) {
         guard isPlaying, player.currentItem != nil else { return }
         if episode?.requiresFiltering == true && !isFullyScanned {
             player.pause()
@@ -565,36 +590,64 @@ final class PlayerController {
             return
         }
         isWaitingForScan = false
-        if player.timeControlStatus == .paused { startPlayback() }
+        let status = player.timeControlStatus
+        if status == .paused || (force && status != .playing) {
+            if status == .waitingToPlayAtSpecifiedRate {
+                playbackLog.notice("Restarting a player stuck waiting: \(self.player.reasonForWaitingToPlay?.rawValue ?? "none", privacy: .public)")
+            }
+            startPlayback(force: force)
+        }
         updateNowPlaying()
     }
 
-    private var isActivatingSession = false
+    /// When the current audio session activation began. It's set while one is in flight.
+    @ObservationIgnored private var activationStarted: Date?
+    /// An activation that hasn't returned after this long is treated as stuck (Siri or another
+    /// interruption can hold it), so a later play tap starts a fresh one instead of being ignored.
+    private let activationTimeout: TimeInterval = 3
+
+    private var isActivatingSession: Bool {
+        activationStarted.map { Date().timeIntervalSince($0) < activationTimeout } ?? false
+    }
 
     /// Activates the audio session without blocking the main thread, then starts the player
     /// (unless the user paused in the meantime).
-    private func startPlayback() {
+    private func startPlayback(force: Bool = false) {
         guard !isActivatingSession, !isSkippingSection else { return }
         if skipFilteredSectionIfNeeded() { return }
-        isActivatingSession = true
+        if let activationStarted {
+            playbackLog.notice("Previous audio session activation stuck for \(Date().timeIntervalSince(activationStarted), format: .fixed(precision: 1))s; starting another")
+        }
+        let started = Date()
+        activationStarted = started
         Task {
-            await Self.activateAudioSession()
-            isActivatingSession = false
+            let activated = await Self.activateAudioSession()
+            // A newer attempt took over after this one stalled.
+            guard activationStarted == started else { return }
+            activationStarted = nil
+            let status = player.timeControlStatus
             guard isPlaying, !isWaitingForScan, player.currentItem != nil,
-                  player.timeControlStatus == .paused else { return }
+                  status == .paused || (force && status != .playing) else { return }
             if skipFilteredSectionIfNeeded() { return }
+            if !activated { playbackLog.notice("Starting playback without an active audio session") }
             player.playImmediately(atRate: rate)
             updateNowPlaying()
         }
     }
 
     @concurrent
-    private nonisolated static func activateAudioSession() async {
+    private nonisolated static func activateAudioSession() async -> Bool {
         let session = AVAudioSession.sharedInstance()
-        if #available(iOS 27, *) {
-            _ = try? await session.activate(options: [])
-        } else {
-            try? session.setActive(true)
+        do {
+            if #available(iOS 27, *) {
+                _ = try await session.activate(options: [])
+            } else {
+                try session.setActive(true)
+            }
+            return true
+        } catch {
+            playbackLog.error("Audio session activation failed: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 
@@ -669,6 +722,7 @@ final class PlayerController {
         if skipFilteredSectionIfNeeded() { return }
         if !isSkippingSection && !isWaitingForScan && !isActivatingSession && isPlaying && player.timeControlStatus == .paused && player.rate == 0 {
             // Paused by the system (phone call, headphones unplugged, etc.).
+            playbackLog.notice("Player paused by the system")
             isPlaying = false
             lastSystemPause = Date()
             updateNowPlaying()
@@ -934,6 +988,13 @@ final class PlayerController {
     /// Resumes after Siri, announced notifications, and other interruptions that end with the
     /// system asking apps to resume. AVPlayer pauses itself when they begin but never restarts.
     private func observeInterruptions() {
+        mediaResetObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.mediaServicesWereReset() }
+        }
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: AVAudioSession.sharedInstance(),
@@ -953,6 +1014,12 @@ final class PlayerController {
 
     private func handleInterruption(_ type: AVAudioSession.InterruptionType?,
                                     options: AVAudioSession.InterruptionOptions, wasSuspended: Bool) {
+        let label = switch type {
+        case .began: "began"
+        case .ended: "ended"
+        default: "unknown"
+        }
+        playbackLog.notice("Interruption \(label, privacy: .public): shouldResume=\(options.contains(.shouldResume)), wasSuspended=\(wasSuspended), isPlaying=\(self.isPlaying), status=\(self.player.timeControlStatus.rawValue)")
         switch type {
         case .began:
             // A stale notice for an app that was suspended; it wasn't playing.
@@ -966,6 +1033,29 @@ final class PlayerController {
         default:
             break
         }
+    }
+
+    /// The system's media server restarted (rare, but Siri can trigger it). Every AVFoundation
+    /// object made before is now dead, so set the session up again and rebuild the player at the
+    /// same spot, playing only if it was.
+    private func mediaServicesWereReset() {
+        playbackLog.error("Media services were reset; rebuilding the player")
+        Self.configureAudioSession()
+        keepAlive.restart()
+        resumeAfterInterruption = false
+        activationStarted = nil
+        let current = episode, wasPlaying = isPlaying
+        savePosition()
+        removeSkipObserver()
+        if let timeObserver { player.removeTimeObserver(timeObserver) }
+        timeObserver = nil
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        player = AVPlayer()
+        player.defaultRate = rate
+        addTimeObserver()
+        guard let current else { return }
+        Task { await load(current, reload: true, autoplay: wasPlaying) }
     }
 
     // MARK: - Lock screen / Control Center

@@ -5,7 +5,12 @@ import AVFoundation
 final class SilentKeepAlive {
     private var engine: AVAudioEngine?
     private var wanted = false
-    private var isActivating = false
+    /// When the session activation in flight began. One that hasn't returned after a few
+    /// seconds is treated as stuck, so a later `start()` can try again.
+    private var activationStarted: Date?
+    private var isActivating: Bool {
+        activationStarted.map { Date().timeIntervalSince($0) < 3 } ?? false
+    }
 
     func start() {
         wanted = true
@@ -14,10 +19,12 @@ final class SilentKeepAlive {
             return
         }
         guard !isActivating else { return }
-        isActivating = true
+        let started = Date()
+        activationStarted = started
         Task {
             await Self.activateSession()
-            isActivating = false
+            guard activationStarted == started else { return }  // a newer attempt took over
+            activationStarted = nil
             guard wanted, engine == nil else { return }
             let engine = AVAudioEngine()
             let silence = Self.makeSilence()
@@ -36,6 +43,15 @@ final class SilentKeepAlive {
         wanted = false
         engine?.stop()
         engine = nil
+    }
+
+    /// After the system resets its media services the old engine is dead; build a new one if
+    /// the silence is still wanted.
+    func restart() {
+        let wasWanted = wanted
+        stop()
+        activationStarted = nil
+        if wasWanted { start() }
     }
 
     @concurrent
