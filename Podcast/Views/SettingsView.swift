@@ -91,7 +91,7 @@ struct SettingsView: View {
             } header: {
                 Text("Downloads")
             } footer: {
-                Text("Auto-delete removes downloads when episodes finish or you mark them as played. Their played status is kept, and you can download them again. New-episode notifications cover automatic downloads that finish while SlipCast is closed, such as the overnight check while your phone charges.")
+                Text("Auto-delete removes played downloads; notifications cover automatic downloads finished while SlipCast is closed.")
             }
 
             Section {
@@ -106,7 +106,7 @@ struct SettingsView: View {
             } header: {
                 Text("On-device Transcription")
             } footer: {
-                Text("Turn on Filter muted words for each show you want filtered. Those episodes must finish downloading and processing before they play. Muted words are skipped, with no silence left behind. Where people talk over each other, SlipCast also listens for your muted words and skips just those spots (English only). Unfiltered shows play the original audio.")
+                Text("Enable Filter muted words per show; filtered episodes must finish processing before they play.")
             }
         }
         .tabTitle("Settings")
