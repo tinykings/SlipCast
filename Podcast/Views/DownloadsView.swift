@@ -23,11 +23,14 @@ struct DownloadsView: View {
         episodes.filter { $0.downloadState == .failed || ($0.requiresFiltering && $0.processingState == .failed) }
     }
 
-    /// In the user's order, then anything they haven't placed yet (newest first).
+    /// Anything the user hasn't placed yet (newest published first), then the user's order.
     private var ready: [Episode] {
         let ready = episodes.filter(\.isReady)
         let placed = ready.filter { $0.queueOrder != nil }.sorted { ($0.queueOrder ?? 0) < ($1.queueOrder ?? 0) }
-        return placed + ready.filter { $0.queueOrder == nil }
+        let unplaced = ready.filter { $0.queueOrder == nil }.sorted {
+            ($0.pubDate ?? $0.downloadedAt ?? .distantPast) > ($1.pubDate ?? $1.downloadedAt ?? .distantPast)
+        }
+        return unplaced + placed
     }
 
     /// Play All follows the order of the ready list.
@@ -116,7 +119,7 @@ struct DownloadsView: View {
         .tabTitle("Downloads", detail: episodes.isEmpty ? nil : Format.bytes(Storage.bytesUsed))
     }
 
-    /// Saves the new order for every ready episode, so later downloads go after them.
+    /// Saves the new order for every ready episode; later downloads appear above them.
     private func move(from source: IndexSet, to destination: Int) {
         var ordered = ready
         ordered.move(fromOffsets: source, toOffset: destination)

@@ -34,13 +34,28 @@ for tag in $(git tag --list "${TAG_PREFIX}*" --sort=-version:refname); do
   fi
 done
 
+# Commits newest first, grouped under a date header (commit date, committer's timezone):
+#   Nov 17, 2026
+#   • Newest change
+#   • Older change that day
+#
+#   Nov 15, 2026
+#   • ...
+LOG_FORMAT="%cd%x09%s"
+DATE_FORMAT="format:%b %d, %Y"
 if [[ -n "$LAST_TAG" ]]; then
   echo "Generating notes for commits since $LAST_TAG"
-  LOG=$(git log --no-merges --pretty=format:"• %s" "$LAST_TAG..HEAD")
+  RAW=$(git log --no-merges --date="$DATE_FORMAT" --pretty=format:"$LOG_FORMAT" "$LAST_TAG..HEAD")
 else
   echo "No previous TestFlight tag found; using the last 10 commits"
-  LOG=$(git log --no-merges -10 --pretty=format:"• %s")
+  RAW=$(git log --no-merges -10 --date="$DATE_FORMAT" --pretty=format:"$LOG_FORMAT")
 fi
+
+LOG=$(print -r -- "$RAW" | awk -F'\t' '
+  NF < 2 { next }
+  $1 != last { if (NR > 1) print ""; print $1; last = $1 }
+  { sub(/^[^\t]*\t/, ""); print "• " $0 }
+')
 
 [[ -z "$LOG" ]] && LOG="• Rebuild with no new commits."
 

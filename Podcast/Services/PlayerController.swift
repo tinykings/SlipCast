@@ -105,6 +105,13 @@ final class PlayerController {
     @ObservationIgnored private var artwork: MPMediaItemArtwork?
     @ObservationIgnored private let keepAlive = SilentKeepAlive()
     @ObservationIgnored private var playWhenReadyTimer: Timer?
+    @ObservationIgnored private var interruptionObserver: NSObjectProtocol?
+    /// Playback was going when an interruption (Siri, announcements, calls) began, so it should
+    /// pick back up if the system says to resume.
+    @ObservationIgnored private var resumeAfterInterruption = false
+    /// When `tick` last noticed the system pausing the player. The interruption notification can
+    /// arrive just after that, once `isPlaying` is already false.
+    @ObservationIgnored private var lastSystemPause: Date?
 
     /// Keep seeking this far behind the scanned point while a re-scan is running.
     private let safetyMargin = 2.0
@@ -123,6 +130,7 @@ final class PlayerController {
         processing.onLiveUpdate = { [weak self] id in self?.scanProgressed(id) }
         processing.onFinished = { [weak self] id in self?.scanFinished(id) }
         configureRemoteCommands()
+        observeInterruptions()
     }
 
     func isCurrent(_ episode: Episode) -> Bool {
@@ -243,6 +251,7 @@ final class PlayerController {
     }
 
     func pause() {
+        resumeAfterInterruption = false
         player.pause()
         isPlaying = false
         isWaitingForScan = false
@@ -661,6 +670,7 @@ final class PlayerController {
         if !isSkippingSection && !isWaitingForScan && !isActivatingSession && isPlaying && player.timeControlStatus == .paused && player.rate == 0 {
             // Paused by the system (phone call, headphones unplugged, etc.).
             isPlaying = false
+            lastSystemPause = Date()
             updateNowPlaying()
         }
         if isPlaying && !isFullyScanned { updatePlaybackGate() }
@@ -919,6 +929,45 @@ final class PlayerController {
         }
     }
 
+    // MARK: - Interruptions
+
+    /// Resumes after Siri, announced notifications, and other interruptions that end with the
+    /// system asking apps to resume. AVPlayer pauses itself when they begin but never restarts.
+    private func observeInterruptions() {
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] note in
+            let info = note.userInfo
+            let type = (info?[AVAudioSessionInterruptionTypeKey] as? UInt)
+                .flatMap(AVAudioSession.InterruptionType.init(rawValue:))
+            let options = (info?[AVAudioSessionInterruptionOptionKey] as? UInt)
+                .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
+            let wasSuspended = info?[AVAudioSessionInterruptionWasSuspendedKey] as? Bool ?? false
+            MainActor.assumeIsolated {
+                self?.handleInterruption(type, options: options, wasSuspended: wasSuspended)
+            }
+        }
+    }
+
+    private func handleInterruption(_ type: AVAudioSession.InterruptionType?,
+                                    options: AVAudioSession.InterruptionOptions, wasSuspended: Bool) {
+        switch type {
+        case .began:
+            // A stale notice for an app that was suspended; it wasn't playing.
+            guard !wasSuspended else { return }
+            let justPausedBySystem = lastSystemPause.map { Date().timeIntervalSince($0) < 2 } ?? false
+            resumeAfterInterruption = episode != nil && (isPlaying || justPausedBySystem)
+        case .ended:
+            let shouldResume = resumeAfterInterruption && options.contains(.shouldResume)
+            resumeAfterInterruption = false
+            if shouldResume { resume() }
+        default:
+            break
+        }
+    }
+
     // MARK: - Lock screen / Control Center
 
     private func configureRemoteCommands() {
@@ -945,6 +994,16 @@ final class PlayerController {
         center.skipBackwardCommand.addTarget { [weak self] event in
             let interval = (event as? MPSkipIntervalCommandEvent)?.interval ?? 15
             MainActor.assumeIsolated { self?.skip(by: -interval) }
+            return .success
+        }
+        // AirPods (double/triple press), CarPlay, and steering-wheel controls send
+        // next/previous track rather than skip commands; map them to the same skips.
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            MainActor.assumeIsolated { self?.skip(by: 30) }
+            return .success
+        }
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            MainActor.assumeIsolated { self?.skip(by: -15) }
             return .success
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in

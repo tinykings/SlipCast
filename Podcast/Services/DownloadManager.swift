@@ -91,7 +91,7 @@ final class DownloadManager: NSObject {
         episode.downloadState = .notDownloaded
         episode.processingState = .none
         episode.processingError = nil
-        episode.queueOrder = nil  // a later download goes to the end of the list
+        episode.queueOrder = nil  // a later download goes to the top of the list
         try? context.save()
     }
 
