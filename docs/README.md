@@ -1,38 +1,42 @@
-# SlipCast website
+# SlipCast
 
-A static, dependency-free GitHub Pages site. No build step, JavaScript, or external assets are required.
+A podcast player for iPhone with custom word filtering, on-device transcription, and offline listening.
 
-## Publish
+## Features
 
-1. Push `docs/` to the repository’s default branch.
-2. In GitHub **Settings → Pages**, select **Deploy from a branch**, select that branch, and choose **/docs**.
-3. Save and wait for the Pages deployment.
+- **Custom word filtering:** Choose words and phrases to skip, enable filtering per show, and adjust padding around matches.
+- **Read-along transcripts:** Follow publisher-provided transcripts or generate them on a supported device. Tap the transcript to jump to a moment in an episode.
+- **Podcast discovery:** Search Apple’s podcast directory, browse charts, or subscribe using an RSS feed URL.
+- **Offline listening:** Download episodes, automatically fetch new releases, limit automatic downloads to Wi-Fi, and optionally delete played downloads.
+- **Playback controls:** Adjust speed, build an Up Next queue, set a sleep timer, navigate available chapters, and jump between detected music sections.
+- **iCloud sync:** Keep subscriptions, played history, playback positions, muted words, and supported settings in sync across your devices.
 
-With the current repository name, the default URLs are:
+## Requirements
 
-- Website / App Store Marketing URL: `https://tinykings.github.io/SlipCast/`
-- App Store Privacy Policy URL: `https://tinykings.github.io/SlipCast/#privacy`
-- App Store Support URL: `https://tinykings.github.io/SlipCast/#support`
+- iPhone running iOS 26.1 or later.
+- On-device transcription and filtering require supported Apple Speech hardware and languages.
+- Filtered episodes must finish processing before playback.
 
-Confirm these URLs are publicly accessible after deployment before entering them in App Store Connect. If a custom domain is configured, use that domain instead.
+Automated filtering can miss words or skip unintended audio. It is not a guarantee that an episode is free of unwanted content or suitable for children.
 
-## Preview
+## Privacy
 
-From the repository root:
+SlipCast has no developer-operated backend, advertising, or analytics SDKs. Audio analysis runs on your device. Downloads, generated transcripts, and audio scans are not synced by the app; subscriptions, listening progress, muted words, and supported settings sync through your own iCloud account.
 
-```sh
-python3 -m http.server 8000 --directory docs
-```
+Podcast discovery and content downloads connect directly to Apple and podcast hosting services, which handle requests under their own privacy policies.
 
-Open `http://localhost:8000/`. Check narrow and wide layouts, light/dark appearance, keyboard navigation, and the `#privacy` link.
+Read the full [Privacy Policy](https://tinykings.github.io/SlipCast/#privacy).
 
-## Maintenance
+## Build and run
 
-- `index.html`: feature copy, support information, and privacy policy.
-- `styles.css`: responsive layout and automatic light/dark themes.
-- `assets/app-icon.png`: resized copy of the app icon.
-- `.nojekyll`: serves the directory as plain static files.
+1. Clone this repository and open `SlipCast.xcodeproj` in Xcode with the iOS 26.1 SDK or later.
+2. Configure signing for your development team.
+3. Select the SlipCast scheme and run on a compatible iPhone.
 
-No App Store listing URL was available when this page was created. Once published, add the actual listing URL to the hero rather than an App Store search link.
+Xcode resolves the Swift package dependencies. Use a supported physical device to test transcription and filtering; Apple Speech transcription is unavailable in the simulator.
 
-Review the privacy policy and effective date before release and whenever data practices change. The policy describes the current source code; it does not automatically establish the correct App Store privacy-label answers. Review those separately against Apple’s definitions, including third-party services.
+## Support
+
+Report bugs and request features through [GitHub Issues](https://github.com/tinykings/SlipCast/issues). Include your iPhone model, iOS version, and steps to reproduce the problem. Issues are public, so do not include personal information.
+
+[Website](https://tinykings.github.io/SlipCast/) · [Source code](https://github.com/tinykings/SlipCast)
