@@ -60,10 +60,10 @@ struct DownloadsView: View {
                         .onMove(perform: move)
                 } header: {
                     HStack(spacing: 12) {
-                        Toggle("Auto play next episode", isOn: $autoPlayNext)
+                        Toggle("Auto play", isOn: $autoPlayNext)
                             .toggleStyle(.switch)
                             .labelsHidden()
-                        Text("Auto play next episode")
+                        Text("Auto play")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .accessibilityHidden(true)

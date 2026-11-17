@@ -8,8 +8,7 @@ struct EpisodeRow: View {
     var showsDownloadedBadge = false
     /// Puts the show's name above the episode, for lists that mix shows.
     var showsShowTitle = false
-    /// Tapping the row opens the show notes, shows a short description, and leaves playback to a
-    /// separate play button.
+    /// Tapping the row opens the show notes and leaves playback to a separate play button.
     var opensShowNotes = false
 
     @Environment(\.modelContext) private var context
@@ -114,16 +113,10 @@ struct EpisodeRow: View {
                         .foregroundStyle(episode.isPlayed ? .tertiary : .secondary)
                 }
                 .font(.caption)
-                Text(episode.title)
+                titleText
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(episode.isPlayed ? .tertiary : .primary)
                     .lineLimit(2)
-                if opensShowNotes, !description.isEmpty {
-                    Text(description)
-                        .font(.caption)
-                        .foregroundStyle(episode.isPlayed ? .tertiary : .secondary)
-                        .lineLimit(3)
-                }
                 if isFiltered, let count = filteredWordCount
                     ?? FilteredWordCount.cached(episodeID: episode.episodeID, terms: mutedTerms.map(\.text)) {
                     Label(count == 0 ? "No muted words found"
@@ -152,9 +145,14 @@ struct EpisodeRow: View {
         }
     }
 
-    /// Plain-text show notes for the row preview. Only the start is needed for three lines.
-    private var description: String {
-        String(episode.summary.prefix(1500)).strippingHTML
+    /// The title, followed by a chevron when tapping the row opens show notes. The chevron is
+    /// part of the text so it trails the last line when the title wraps.
+    private var titleText: Text {
+        guard opensShowNotes, !episode.summary.isEmpty else { return Text(episode.title) }
+        let chevron = Text(Image(systemName: "chevron.right"))
+            .font(.caption.weight(.bold))
+            .foregroundStyle(.tertiary)
+        return Text("\(episode.title) \(chevron)")
     }
 
     private var playbackDuration: Double? {
