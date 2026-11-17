@@ -1,5 +1,6 @@
 import AudioDetection
 import Foundation
+import KeywordSpotting
 
 /// How many muted words were found in a processed episode, for episode lists: matches in the
 /// transcript plus muted words heard in crosstalk.
