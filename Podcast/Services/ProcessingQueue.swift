@@ -19,8 +19,8 @@ import UIKit
 /// player can start before the whole episode is done.
 @Observable
 final class ProcessingQueue {
-    /// episodeID -> 0...1
     private(set) var isPaused = UserDefaults.standard.bool(forKey: AppSettings.processingPausedKey)
+    /// episodeID -> 0...1
     private(set) var progress: [String: Double] = [:] {
         didSet { reportContinuedProgress() }
     }
@@ -394,19 +394,11 @@ final class ProcessingQueue {
         let box = UncheckedBox(bgTask)
         processingTask = bgTask
         bgTask.expirationHandler = { @Sendable [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                if self.shouldStopTranscription(expiring: .processingTask) {
-                    self.stop()
-                    return
-                }
-                // The processing lease is over, but audio or a continued task is still
-                // keeping this run alive. Complete the task without cancelling the work.
-                if self.processingTask === box.value {
-                    self.processingTask = nil
-                    box.value.setTaskCompleted(success: false)
-                    BackgroundWork.scheduleProcessing()
-                }
+            // Handled before returning when possible: iOS can suspend the app soon after.
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { self?.processingTaskExpired(box) }
+            } else {
+                Task { @MainActor in self?.processingTaskExpired(box) }
             }
         }
         let runner = start()
@@ -420,6 +412,29 @@ final class ProcessingQueue {
                 BackgroundWork.scheduleProcessing()
             }
         }
+    }
+
+    /// The BGProcessingTask's time is up. iOS expects it completed right away, so this doesn't
+    /// wait for the run to unwind (a stuck speech pass can take 10 s or more to be abandoned).
+    private func processingTaskExpired(_ box: UncheckedBox<BGProcessingTask>) {
+        guard processingTask === box.value else { return }
+        let stopping = shouldStopTranscription(expiring: .processingTask)
+        processingTask = nil
+        if stopping {
+            // Save where the speech pass got to now, in case the app is suspended before the
+            // cancelled run gets to. The overlap scan checkpoints after every window already.
+            checkpointActiveRun()
+            stop()
+        }
+        // Otherwise audio or a continued task is still keeping this run alive, and it carries on.
+        box.value.setTaskCompleted(success: false)
+        BackgroundWork.scheduleProcessing()
+    }
+
+    /// Saves the active episode's speech progress so a later run resumes from here.
+    private func checkpointActiveRun() {
+        guard let id = activeEpisodeID, inSpeechPass, let episode = context.episode(withID: id) else { return }
+        saveSpeechCheckpoint(episodeID: id, locale: episode.show?.transcriptionLocale ?? .current)
     }
 
     // MARK: Continued processing (iOS 26)

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// One recognized word with its position in the episode audio, in seconds.
 nonisolated struct TranscriptWord: Codable, Sendable, Hashable {
@@ -21,6 +22,7 @@ nonisolated enum TranscriptStore {
 
     static func save(_ words: [TranscriptWord], episodeID: String, engine: String) throws {
         let data = try JSONEncoder().encode(Document(engine: engine, words: words))
+        forgetCurrent(episodeID: episodeID)
         try data.write(to: url(for: episodeID), options: .atomic)
     }
 
@@ -30,8 +32,25 @@ nonisolated enum TranscriptStore {
         return try JSONDecoder().decode([TranscriptWord].self, from: data)
     }
 
+    /// Whether a complete transcript from the current engine is saved. Answering means decoding
+    /// the whole file, and this is asked about every download whenever the queue looks for work,
+    /// so the answer is remembered until the file's size or modification date changes.
     static func isCurrent(episodeID: String) -> Bool {
-        guard let data = try? Data(contentsOf: url(for: episodeID)) else { return false }
+        let fileURL = url(for: episodeID)
+        guard let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+              let size = values.fileSize else {
+            forgetCurrent(episodeID: episodeID)
+            return false
+        }
+        let stamp = FileStamp(size: size, modified: values.contentModificationDate)
+        if let known = currentCache.withLock({ $0[episodeID] }), known.stamp == stamp { return known.isCurrent }
+        let current = decodeIsCurrent(fileURL)
+        currentCache.withLock { $0[episodeID] = CachedCheck(stamp: stamp, isCurrent: current) }
+        return current
+    }
+
+    private static func decodeIsCurrent(_ url: URL) -> Bool {
+        guard let data = try? Data(contentsOf: url) else { return false }
         if let document = try? JSONDecoder().decode(Document.self, from: data) {
             return document.engine == engineIdentifier
         }
@@ -39,7 +58,24 @@ nonisolated enum TranscriptStore {
         return (try? JSONDecoder().decode([TranscriptWord].self, from: data)) != nil
     }
 
+    private struct FileStamp: Equatable, Sendable {
+        let size: Int
+        let modified: Date?
+    }
+
+    private struct CachedCheck: Sendable {
+        let stamp: FileStamp
+        let isCurrent: Bool
+    }
+
+    private static let currentCache = OSAllocatedUnfairLock(initialState: [String: CachedCheck]())
+
+    private static func forgetCurrent(episodeID: String) {
+        _ = currentCache.withLock { $0.removeValue(forKey: episodeID) }
+    }
+
     static func delete(episodeID: String) {
+        forgetCurrent(episodeID: episodeID)
         try? FileManager.default.removeItem(at: url(for: episodeID))
         deletePartial(episodeID: episodeID)
         MusicSections.delete(episodeID: episodeID)

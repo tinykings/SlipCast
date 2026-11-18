@@ -89,7 +89,6 @@ final class Episode {
 
     var requiresFiltering: Bool { show?.filteringEnabled == true }
 
-    /// Downloaded; filtered shows also require both processing passes.
     /// The Downloads list order for ready episodes: anything the user hasn't placed yet
     /// (newest published first), then the user's order.
     static func downloadsOrder(_ episodes: [Episode]) -> [Episode] {
@@ -101,6 +100,7 @@ final class Episode {
         return unplaced + placed
     }
 
+    /// Downloaded; filtered shows also require both processing passes.
     var isReady: Bool {
         downloadState == .downloaded && (!requiresFiltering || processingState == .ready)
     }

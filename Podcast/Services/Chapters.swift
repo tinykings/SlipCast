@@ -65,7 +65,9 @@ nonisolated enum Chapters {
     @concurrent
     static func published(episodeID: String, url: String) async throws -> [Chapter] {
         if let cached = cached(episodeID: episodeID) { return cached }
-        guard let remote = URL(string: url) else { throw URLError(.badURL) }
+        guard var components = URLComponents(string: url) else { throw URLError(.badURL) }
+        if components.scheme?.lowercased() == "http" { components.scheme = "https" }  // ATS
+        guard let remote = components.url else { throw URLError(.badURL) }
         let (data, response) = try await URLSession.shared.data(from: remote)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw URLError(.badServerResponse)

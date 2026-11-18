@@ -14,6 +14,14 @@ struct DownloadsView: View {
     @Environment(PlayerController.self) private var player
     @Environment(\.modelContext) private var context
     @AppStorage(AppSettings.autoPlayNextKey) private var autoPlayNext = true
+    /// Space used on disk. Worked out off the main thread when downloads change, not on every
+    /// redraw, since it lists every storage folder.
+    @State private var bytesUsed: Int64?
+
+    /// Changes whenever a download or its processing starts, finishes or is removed.
+    private var storageKey: [String] {
+        episodes.map { "\($0.episodeID)|\($0.downloadStateRaw)|\($0.processingStateRaw)" }
+    }
 
     private var inProgress: [Episode] {
         episodes.filter(\.isInProgress)
@@ -87,7 +95,16 @@ struct DownloadsView: View {
                 )
             }
         }
-        .tabTitle("Downloads", detail: episodes.isEmpty ? nil : Format.bytes(Storage.bytesUsed))
+        .tabTitle("Downloads", detail: episodes.isEmpty ? nil : bytesUsed.map(Format.bytes))
+        .task(id: storageKey) {
+            let bytes = await Self.measureStorage()
+            if !Task.isCancelled { bytesUsed = bytes }
+        }
+    }
+
+    @concurrent
+    nonisolated private static func measureStorage() async -> Int64 {
+        Storage.bytesUsed
     }
 
     /// Saves the new order for every ready episode; later downloads appear above them.

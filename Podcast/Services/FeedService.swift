@@ -64,6 +64,9 @@ final class FeedService {
 
         let parsed: ParsedFeed
         if let feed { parsed = feed } else { parsed = try await Self.fetchFeed(feedURL) }
+        // Subscribed while the feed loaded (a second tap, or a restore from iCloud). Inserting
+        // again would replace that show, since feedURL is unique.
+        if let existing = context.show(withFeedURL: feedURL) { return existing }
 
         let show = Show(
             feedURL: feedURL,
@@ -152,6 +155,7 @@ final class FeedService {
         isRefreshing = true
         defer { isRefreshing = false }
 
+        let feedURLs = shows.map(\.feedURL)
         var pending = shows.map { FeedRequest(url: $0.feedURL, etag: $0.feedETag, lastModified: $0.feedLastModified) }[...]
 
         let results = await withTaskGroup(of: (String, FeedFetchResult?).self) { group in
@@ -169,9 +173,14 @@ final class FeedService {
         }
         guard !Task.isCancelled else { return }
 
+        // Shows unsubscribed during the fetches (here or from iCloud) are deleted models now;
+        // look each one up again rather than touching the old instances.
         var showsWithNewEpisodes: [Show] = []
-        for show in shows {
-            guard let result = results[show.feedURL] else { continue }
+        var current: [Show] = []
+        for feedURL in feedURLs {
+            guard let show = context.show(withFeedURL: feedURL) else { continue }
+            current.append(show)
+            guard let result = results[feedURL] else { continue }
             guard case .feed(let feed, let etag, let lastModified) = result else {
                 show.lastRefreshed = .now  // 304: nothing new
                 continue
@@ -191,7 +200,7 @@ final class FeedService {
         }
         try? context.save()
 
-        let needsArtwork = shows.filter { show in
+        let needsArtwork = current.filter { show in
             show.directoryArtworkCheckedAt == nil || showsWithNewEpisodes.contains { $0 === show }
         }
         if !needsArtwork.isEmpty { Task { await fillDirectoryArtwork(for: needsArtwork) } }
@@ -200,21 +209,33 @@ final class FeedService {
     /// Gives episodes without their own cover in the feed the one the Apple Podcasts directory has,
     /// if it's different from the show's artwork.
     func fillDirectoryArtwork(for shows: [Show]) async {
-        for show in shows {
-            let missing = show.episodes.filter { $0.directoryImageURL == nil && ($0.imageURL == nil || $0.imageURL == show.artworkURL) }
-            guard !missing.isEmpty else { continue }
+        // Each lookup awaits the network, and a show can be unsubscribed meanwhile, so shows are
+        // looked up again by feed URL after every await instead of holding the models.
+        for feedURL in shows.map(\.feedURL) {
+            guard let show = context.show(withFeedURL: feedURL) else { continue }
+            let hasMissing = show.episodes.contains { Self.needsDirectoryCover($0, show: show) }
+            guard hasMissing else { continue }
             // Shows that aren't in the directory are looked up again only when new episodes arrive.
             show.directoryArtworkCheckedAt = .now
-            if show.directoryID == nil {
-                show.directoryID = try? await DirectoryService.directoryID(feedURL: show.feedURL, title: show.title)
+            var directoryID = show.directoryID
+            if directoryID == nil {
+                let title = show.title
+                directoryID = try? await DirectoryService.directoryID(feedURL: feedURL, title: title)
+                guard let show = context.show(withFeedURL: feedURL) else { continue }
+                show.directoryID = directoryID
             }
-            guard let id = show.directoryID,
-                  let covers = try? await DirectoryService.episodeArtwork(directoryID: id) else { continue }
-            for episode in missing {
+            guard let id = directoryID,
+                  let covers = try? await DirectoryService.episodeArtwork(directoryID: id),
+                  let show = context.show(withFeedURL: feedURL) else { continue }
+            for episode in show.episodes where Self.needsDirectoryCover(episode, show: show) {
                 if let cover = covers[episode.guid] ?? covers[episode.audioURL] { episode.directoryImageURL = cover }
             }
         }
         try? context.save()
+    }
+
+    private static func needsDirectoryCover(_ episode: Episode, show: Show) -> Bool {
+        episode.directoryImageURL == nil && (episode.imageURL == nil || episode.imageURL == show.artworkURL)
     }
 
     /// Updates show metadata and inserts episodes we haven't seen. Returns the new ones.

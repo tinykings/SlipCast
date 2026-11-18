@@ -168,9 +168,7 @@ final class PlayerController {
     }
 
     /// Episodes play only once downloaded; filtered ones also need their scan.
-    static func canPlay(_ episode: Episode) -> Bool {
-        episode.downloadState == .downloaded && (!episode.requiresFiltering || episode.processingState == .ready)
-    }
+    static func canPlay(_ episode: Episode) -> Bool { episode.isReady }
 
     var scanStatus: String {
         if processing.isPaused && episode?.requiresFiltering == true { return "Filtering paused · resume in Downloads" }

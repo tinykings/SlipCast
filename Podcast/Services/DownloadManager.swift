@@ -2,6 +2,7 @@ import Foundation
 import AudioDetection
 import Observation
 import SwiftData
+import os
 
 /// Downloads episodes with a background URLSession, so transfers continue while the app is
 /// suspended. When a download finishes, the episode is queued for transcription.
@@ -17,6 +18,9 @@ final class DownloadManager: NSObject {
     @ObservationIgnored private let context: ModelContext
     @ObservationIgnored private let processing: ProcessingQueue
     @ObservationIgnored private var session: URLSession!
+    /// The last fraction sent to the main actor for each transfer, so progress callbacks (which
+    /// can arrive hundreds of times a second) only hop over when the bar would visibly move.
+    private nonisolated let reportedProgress = OSAllocatedUnfairLock(initialState: [String: Double]())
 
     init(context: ModelContext, processing: ProcessingQueue) {
         self.context = context
@@ -112,7 +116,10 @@ final class DownloadManager: NSObject {
     // MARK: - Main-actor state updates
 
     private func updateProgress(_ id: String, _ fraction: Double) {
+        let isFirstUpdate = progress[id] == nil
         progress[id] = fraction
+        // Only the first bytes move it from queued to downloading; skip the fetch after that.
+        guard isFirstUpdate else { return }
         if let episode = context.episode(withID: id), episode.downloadState == .queued {
             episode.downloadState = .downloading
         }
@@ -120,7 +127,8 @@ final class DownloadManager: NSObject {
 
     private func finish(_ id: String, fileName: String) {
         progress[id] = nil
-        guard let episode = context.episode(withID: id) else {
+        // Gone, or the user cancelled (or deleted it) just as the transfer finished.
+        guard let episode = context.episode(withID: id), episode.downloadState != .notDownloaded else {
             try? FileManager.default.removeItem(at: Storage.episodesDirectory.appending(path: fileName))
             return
         }
@@ -207,10 +215,19 @@ extension DownloadManager: URLSessionDownloadDelegate {
     ) {
         guard let id = downloadTask.taskDescription, totalBytesExpectedToWrite > 0 else { return }
         let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        let shouldReport = reportedProgress.withLock { reported in
+            guard let last = reported[id], fraction - last < 0.005, fraction < 1 else {
+                reported[id] = fraction
+                return true
+            }
+            return false
+        }
+        guard shouldReport else { return }
         Task { @MainActor in self.updateProgress(id, fraction) }
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let id = task.taskDescription { _ = reportedProgress.withLock { $0.removeValue(forKey: id) } }
         guard let error = error as NSError?, let id = task.taskDescription else { return }
         // Keep what arrived so a retry continues instead of starting over. User cancels don't
         // produce resume data, and their state is already `.notDownloaded`.

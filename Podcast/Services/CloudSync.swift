@@ -29,6 +29,10 @@ final class CloudSync {
     private var restoring: Set<String> = []
     private var restoreAttempts: [String: Date] = [:]
     private var observers: [NSObjectProtocol] = []
+    /// The synced settings in UserDefaults as last seen. UserDefaults reports every change,
+    /// including keys that aren't synced (playback speed, sleep timer, refresh dates), so a
+    /// pass is only scheduled when one of these is different.
+    private var lastSyncedDefaults: [String: SettingValue] = [:]
 
     private static let historyKey = "history.v1"
     private static let showPrefix = "show."
@@ -47,6 +51,7 @@ final class CloudSync {
     func start() {
         store.synchronize()
         cloudReady = ledger.initialized || store.keys.contains { Self.isSyncKey($0) }
+        lastSyncedDefaults = SyncedSettings.readDefaults()
         let center = NotificationCenter.default
         observers = [
             center.addObserver(forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
@@ -65,7 +70,7 @@ final class CloudSync {
                 }
             },
             center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.schedule() }
+                MainActor.assumeIsolated { self?.defaultsChanged() }
             },
         ]
         // Positions saved every few seconds during playback sync when playback pauses or stops.
@@ -106,6 +111,13 @@ final class CloudSync {
         return current.isPlayed == syncedPlayed
     }
 
+    private func defaultsChanged() {
+        let current = SyncedSettings.readDefaults()
+        guard current != lastSyncedDefaults else { return }
+        lastSyncedDefaults = current
+        schedule()
+    }
+
     private func schedule(after delay: Double = 2) {
         scheduled?.cancel()
         scheduled = Task { [weak self] in
@@ -124,7 +136,9 @@ final class CloudSync {
         syncShows(now: now)
         syncHistory(now: now)
         syncSettings(now: now)
-        ledger.initialized = true
+        // Only once iCloud has had its chance to deliver: otherwise a relaunch before the first
+        // download would treat local data as current and could overwrite the backup.
+        if cloudReady { ledger.initialized = true }
         ledger.save()
     }
 
@@ -197,6 +211,9 @@ final class CloudSync {
                 for text in wanted.subtracting(terms.map(\.text)) { context.insert(MutedTerm(text: text)) }
                 mutingChanged = true
             } else {
+                // Recorded first, so applying iCloud's value doesn't look like a local change
+                // and schedule another pass.
+                lastSyncedDefaults[key] = value
                 SyncedSettings.write(value, key: key)
                 if key == AppSettings.paddingKey { mutingChanged = true }
             }
@@ -328,6 +345,13 @@ enum SyncedSettings {
     ]
 
     static func read(terms: [MutedTerm]) -> [String: SettingValue] {
+        var values = readDefaults()
+        values[mutedTermsKey] = .list(Set(terms.map(\.text)).sorted())
+        return values
+    }
+
+    /// The synced settings kept in UserDefaults: everything but the muted words.
+    static func readDefaults() -> [String: SettingValue] {
         let defaults = UserDefaults.standard
         return [
             AppSettings.paddingKey: .number(defaults.double(forKey: AppSettings.paddingKey)),
@@ -335,7 +359,6 @@ enum SyncedSettings {
             AppSettings.autoDownloadNewKey: .bool(defaults.bool(forKey: AppSettings.autoDownloadNewKey)),
             AppSettings.autoDeletePlayedKey: .bool(defaults.bool(forKey: AppSettings.autoDeletePlayedKey)),
             librarySortKey: .text(defaults.string(forKey: librarySortKey) ?? LibrarySort.name.rawValue),
-            mutedTermsKey: .list(Set(terms.map(\.text)).sorted()),
         ]
     }
 
