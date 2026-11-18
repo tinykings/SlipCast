@@ -131,6 +131,15 @@ final class PlayerController {
         self.downloads = downloads
         Self.configureAudioSession()
         addTimeObserver()
+        processing.audioKeepsProcessAlive = { [weak self] in
+            guard let self else { return false }
+            if self.keepAlive.isRunning { return true }
+            guard self.isPlaying else { return false }
+            switch self.player.timeControlStatus {
+            case .playing, .waitingToPlayAtSpecifiedRate: return true
+            default: return false
+            }
+        }
         processing.onLiveUpdate = { [weak self] id in self?.scanProgressed(id) }
         processing.onFinished = { [weak self] id in self?.scanFinished(id) }
         configureRemoteCommands()

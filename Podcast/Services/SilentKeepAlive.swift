@@ -12,6 +12,9 @@ final class SilentKeepAlive {
         activationStarted.map { Date().timeIntervalSince($0) < 3 } ?? false
     }
 
+    /// True while the silence engine is running and holding the audio session open.
+    var isRunning: Bool { engine?.isRunning == true }
+
     func start() {
         wanted = true
         if let engine {
