@@ -17,6 +17,7 @@ struct SettingsView: View {
 
     @State private var newTerm = ""
     @State private var rescanRequested = false
+    @State private var showingSubscriptionImport = false
 
     /// Changes whenever anything affecting the mute ranges changes.
     private var muteSignature: String {
@@ -94,6 +95,12 @@ struct SettingsView: View {
                 Text("Auto-delete removes played downloads; notifications cover automatic downloads finished while SlipCast is closed.")
             }
 
+            Section("Library") {
+                Button("Import Followed Shows") {
+                    showingSubscriptionImport = true
+                }
+            }
+
             Section {
                 Button("Re-scan filtered downloads") {
                     player.rescanDownloads()
@@ -110,6 +117,9 @@ struct SettingsView: View {
             }
         }
         .tabTitle("Settings")
+        .sheet(isPresented: $showingSubscriptionImport) {
+            NavigationStack { SubscriptionImportView() }
+        }
         .onChange(of: muteSignature) {
             player.refreshMuting()
         }
