@@ -58,7 +58,8 @@ final class FeedService {
         feedURL: String,
         feed: ParsedFeed? = nil,
         fallbackArtwork: String? = nil,
-        directoryID: Int? = nil
+        directoryID: Int? = nil,
+        downloadLatest: Bool = true
     ) async throws -> Show {
         if let existing = context.show(withFeedURL: feedURL) { return existing }
 
@@ -83,14 +84,28 @@ final class FeedService {
         show.filteringEnabled = show.isExplicit && DeviceSupport.transcriptionAvailable
         context.insert(show)
         apply(parsed, to: show)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            context.delete(show)
+            throw error
+        }
         Task { await fillDirectoryArtwork(for: [show]) }
 
         // Grab the latest episode so there's something ready to play.
-        if show.autoDownload, let latest = show.sortedEpisodes.first {
+        if downloadLatest, show.autoDownload, let latest = show.sortedEpisodes.first {
             downloads.download(latest, userInitiated: true)
         }
         return show
+    }
+
+    /// Returns whether the import added a show. An existing subscription keeps its settings.
+    func importSubscription(feedURL: String) async throws -> Bool {
+        guard !isSubscribed(feedURL) else { return false }
+        let parsed = try await Self.fetchFeed(feedURL)
+        guard !isSubscribed(feedURL) else { return false }
+        try await subscribe(feedURL: feedURL, feed: parsed, downloadLatest: false)
+        return true
     }
 
     /// Resubscribes to a show from iCloud with its synced settings. Nothing is downloaded

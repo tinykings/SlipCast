@@ -11,6 +11,12 @@ A podcast player for iPhone with custom word filtering, on-device transcription,
 - **Playback controls:** Adjust speed, build an Up Next queue, set a sleep timer, navigate available chapters, and jump between detected music sections.
 - **iCloud sync:** Keep subscriptions, played history, playback positions, muted words, and supported settings in sync across your devices.
 
+## Import followed shows
+
+In SlipCast, open **Settings → Import Followed Shows** and choose a podcasts OPML file from Files. To switch from Apple Podcasts, use [Harold Gao’s export shortcut](https://haroldgao.com/post/opml/#2-export-your-apple-podcast-subscription-list-into-other-podcast-apps) on your iPhone to save the file first.
+
+SlipCast skips shows you already follow. Importing leaves existing episodes undownloaded and uses your auto-download setting for upcoming releases. OPML carries feed subscriptions only.
+
 ## Requirements
 
 - iPhone running iOS 26.1 or later.
