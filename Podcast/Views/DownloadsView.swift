@@ -10,7 +10,6 @@ struct DownloadsView: View {
     private var episodes: [Episode]
 
     @Environment(ProcessingQueue.self) private var processing
-    @Environment(DownloadManager.self) private var downloads
     @Environment(PlayerController.self) private var player
     @Environment(\.modelContext) private var context
     @AppStorage(AppSettings.autoPlayNextKey) private var autoPlayNext = true
@@ -121,8 +120,7 @@ struct DownloadsView: View {
         EpisodeRow(episode: episode, showsRemainingTime: true, showsShowTitle: true, opensShowNotes: true)
             .swipeActions {
                 Button("Delete", systemImage: "trash", role: .destructive) {
-                    if player.isCurrent(episode) { player.stop() }
-                    downloads.deleteDownload(episode)
+                    player.deleteDownloadAndMarkPlayed(episode)
                 }
                 ReprocessButton(episode: episode)
             }

@@ -342,6 +342,14 @@ final class PlayerController {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
+    func deleteDownloadAndMarkPlayed(_ episode: Episode) {
+        if isCurrent(episode) { stop() }
+        if playWhenReadyID == episode.episodeID { cancelPlayWhenReady() }
+        episode.isPlayed = true
+        episode.playbackPosition = 0
+        downloads.deleteDownload(episode)
+    }
+
     func filteringChanged(for show: Show) {
         if episode?.show?.feedURL == show.feedURL { stop() }
         processing.filteringChanged(for: show)

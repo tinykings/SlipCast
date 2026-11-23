@@ -62,8 +62,7 @@ struct EpisodeRow: View {
         .contextMenu {
             if episode.downloadState == .downloaded || episode.downloadState == .failed {
                 Button("Remove Download", systemImage: "trash", role: .destructive) {
-                    if player.isCurrent(episode) { player.stop() }
-                    downloads.deleteDownload(episode)
+                    player.deleteDownloadAndMarkPlayed(episode)
                 }
             }
             if episode.requiresFiltering && episode.processingState == .failed {

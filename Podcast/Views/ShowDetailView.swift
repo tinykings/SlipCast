@@ -166,8 +166,9 @@ private struct OlderEpisodesView: View {
     }
 }
 
-/// Show-page episode rows: tapping opens the show notes, the play button plays, swiping deletes a download
-/// or, for an episode that isn't downloaded, marks it played.
+/// Show-page episode rows: tapping opens the show notes and the play button plays the episode.
+/// Swiping deletes the download and marks the episode as played, or toggles played status
+/// for an episode without a download.
 private struct ShowEpisodeRows: View {
     let episodes: [Episode]
     @Environment(DownloadManager.self) private var downloads
@@ -180,8 +181,7 @@ private struct ShowEpisodeRows: View {
                 .swipeActions(edge: .trailing) {
                     if episode.downloadState == .downloaded || episode.downloadState == .failed {
                         Button("Delete", systemImage: "trash", role: .destructive) {
-                            if player.isCurrent(episode) { player.stop() }
-                            downloads.deleteDownload(episode)
+                            player.deleteDownloadAndMarkPlayed(episode)
                         }
                         ReprocessButton(episode: episode)
                     } else if episode.downloadState == .notDownloaded {
