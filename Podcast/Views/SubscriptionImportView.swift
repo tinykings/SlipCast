@@ -14,10 +14,27 @@ struct SubscriptionImportView: View {
             Section {
                 Button("Choose OPML File") { choosingFile = true }
                     .disabled(isImporting)
-                Link("Apple Podcasts Export Instructions",
-                     destination: URL(string: "https://haroldgao.com/post/opml/#2-export-your-apple-podcast-subscription-list-into-other-podcast-apps")!)
             } footer: {
-                Text("For Apple Podcasts, use the export shortcut to save your followed shows to Files first. The file contains shows only.")
+                Text("Choose an OPML file to import followed shows. Listening history and playback positions aren’t included.")
+            }
+
+            Section {
+                if let shortcutURL = Bundle.main.url(forResource: "Export Apple Podcasts", withExtension: "shortcut") {
+                    ShareLink(item: shortcutURL) {
+                        Label("Install Export Shortcut", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(isImporting)
+                } else {
+                    Text("The export shortcut is unavailable in this build.")
+                        .foregroundStyle(.secondary)
+                }
+                Text("1. Open the shared file in Shortcuts and confirm Add Shortcut. If needed, save it to Files first, then tap it there.")
+                Text("2. Run Export Apple Podcasts in Shortcuts, allow access to Podcasts, and save Apple Podcasts.opml to Files.")
+                Text("3. Return here and tap Choose OPML File.")
+            } header: {
+                Text("Export from Apple Podcasts")
+            } footer: {
+                Text("The bundled shortcut runs on your device. It reads your Podcasts library and asks where to save the list; it doesn’t upload it. Installation and permissions require your confirmation.")
             }
 
             if let progress {

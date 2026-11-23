@@ -13,7 +13,7 @@ A podcast player for iPhone with custom word filtering, on-device transcription,
 
 ## Import followed shows
 
-In SlipCast, open **Settings → Import Followed Shows** and choose a podcasts OPML file from Files. To switch from Apple Podcasts, use [Harold Gao’s export shortcut](https://haroldgao.com/post/opml/#2-export-your-apple-podcast-subscription-list-into-other-podcast-apps) on your iPhone to save the file first.
+In SlipCast, open **Settings → Import Followed Shows** and choose a podcasts OPML file from Files. To switch from Apple Podcasts, tap **Install Export Shortcut** to share the bundled, signed shortcut to Shortcuts (or save it to Files and open it there). Confirm installation, run **Export Apple Podcasts**, and save its OPML file. Return to SlipCast and choose that file. Installation and Podcasts access require your confirmation.
 
 SlipCast skips shows you already follow. Importing leaves existing episodes undownloaded and uses your auto-download setting for upcoming releases. OPML carries feed subscriptions only.
 
